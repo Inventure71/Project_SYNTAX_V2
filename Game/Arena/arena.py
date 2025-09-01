@@ -84,6 +84,19 @@ class Arena:
                     if prect.colliderect(obstacle.rect):
                         proj.alive = False
                         break
+            # Collide projectiles with characters (skip owner)
+            if getattr(proj, 'alive', True):
+                for character in self.characters:
+                    if character is getattr(proj, 'owner', None):
+                        continue
+                    if not hasattr(character, 'get_world_rect'):
+                        continue
+                    char_rect = character.get_world_rect()
+                    if prect.colliderect(char_rect):
+                        if hasattr(character, 'take_damage'):
+                            character.take_damage(getattr(proj, 'damage', 10.0))
+                        proj.alive = False
+                        break
         # prune dead projectiles
         self.projectiles = [p for p in self.projectiles if getattr(p, "alive", True)]
 
@@ -152,10 +165,16 @@ class Arena:
         player = self.characters[0]
         ammo = getattr(player, "ammo", None)
         weapon = getattr(player, "weapon", None)
+        health = getattr(player, "health", None)
+        max_health = getattr(player, "max_health", None)
         if ammo is None:
             ammo = 0
         weapon_name = weapon.name if weapon is not None else "None"
-        text_surf = self.font.render(f"Ammo: {ammo} | Weapon: {weapon_name}", True, WHITE)
+        if health is None or max_health is None:
+            health_str = ""
+        else:
+            health_str = f" | HP: {health}/{max_health}"
+        text_surf = self.font.render(f"Ammo: {ammo} | Weapon: {weapon_name}{health_str}", True, WHITE)
         self.screen.blit(text_surf, (12, 10))
     
     def handle_key_event(self, key_list):
@@ -229,15 +248,33 @@ class Arena:
                         sx, sy = event.pos
                         world_x = cam_rect.left + (sx / scale_x)
                         world_y = cam_rect.top + (sy / scale_y)
+                        # update aim direction
+                        aim_dir = (world_x - player.position.x, world_y - player.position.y)
+                        if hasattr(player, 'set_aim_direction'):
+                            player.set_aim_direction(aim_dir)
                         start = (int(player.position.x), int(player.position.y))
                         direction = (world_x - start[0], world_y - start[1])
                         speed = getattr(weapon, 'projectile_speed', 16.0)
                         sprite = None
                         if hasattr(weapon, 'get_projectile_sprite'):
                             sprite = weapon.get_projectile_sprite()
-                        self.spawn_projectile(start, direction, speed, sprite)
+                        damage = getattr(weapon, 'damage', 10.0)
+                        self.spawn_projectile(start, direction, speed, sprite, damage, player)
                         # consume ammo
                         player.ammo = weapon.consume_ammo(player.ammo)
+        elif event.type == pygame.MOUSEMOTION:
+            # Update aim direction continuously
+            if len(self.characters) > 0:
+                player = self.characters[0]
+                cam_rect = self.characters[0].create_camera_surface()
+                scale_x = self.rect.width / cam_rect.width
+                scale_y = self.rect.height / cam_rect.height
+                sx, sy = event.pos
+                world_x = cam_rect.left + (sx / scale_x)
+                world_y = cam_rect.top + (sy / scale_y)
+                aim_dir = (world_x - player.position.x, world_y - player.position.y)
+                if hasattr(player, 'set_aim_direction'):
+                    player.set_aim_direction(aim_dir)
         # Forward event to children
         for character in self.characters:
             character.handle_event(event)
@@ -282,8 +319,8 @@ class Arena:
             ])
             self.add_obstacle(Obstacle((x, y, w, h), base_health=health, blocking_mask=mask_choice))
 
-    def spawn_projectile(self, start_pos, direction, speed: float = 16.0, sprite=None):
-        proj = Projectile(start_pos, direction, speed=speed, sprite=sprite)
+    def spawn_projectile(self, start_pos, direction, speed: float = 16.0, sprite=None, damage: float = 10.0, owner=None):
+        proj = Projectile(start_pos, direction, speed=speed, sprite=sprite, damage=damage, owner=owner)
         self.projectiles.append(proj)
 
     def _clamp_character_to_world(self, character):

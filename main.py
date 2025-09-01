@@ -8,6 +8,7 @@ import pygame
 from Agent.agent_main import AgentMain
 from Game.Arena.arena import Arena
 from Game.Character.cow import Cow
+from Game.Character.ai_cow import AICow
 from Game.UI_Components.menu import Menu
 import logging
 
@@ -83,6 +84,11 @@ if __name__ == "__main__":
     player = Cow((0, 0, 50, 50), "muuu", (WORLD_W * 0.5, WORLD_H * 0.5), camera_display_size=camera_size, world_display_size=world_size, ammo_find_probability=0.2, move_step=4)
 
     arena.add_new_character(player)
+    # Spawn some AI cows
+    npc1 = AICow((0, 0, 50, 50), "npc1", (WORLD_W * 0.5 + 120, WORLD_H * 0.5), camera_display_size=camera_size, world_display_size=world_size, ammo_find_probability=0.1, move_step=3)
+    npc2 = AICow((0, 0, 50, 50), "npc2", (WORLD_W * 0.5 - 160, WORLD_H * 0.5 + 80), camera_display_size=camera_size, world_display_size=world_size, ammo_find_probability=0.1, move_step=3)
+    arena.add_new_character(npc1)
+    arena.add_new_character(npc2)
 
     while True:
         for event in pygame.event.get():

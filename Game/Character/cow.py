@@ -1,8 +1,10 @@
 import pygame
 import random
+import math
 from pygame import Vector2
 from Game.constants import FONT, YELLOW, ZOOM_STEP, ZOOM_MAX
 from Game.layers import LAYER_GROUND
+from Game.assets import load_image
 
 class Cow:
     def __init__(self, rect, username, starting_position, base_health: int = 100, base_stamina: int = 100, camera_display_size: int = (0,0), world_display_size: int = (0,0), color=YELLOW, renderer=None, move_step: int = 1, ammo_find_probability: float = 0.2, starting_ammo: int = 0, eating_slowdown_pct: float = 0.4):
@@ -25,7 +27,8 @@ class Cow:
         self.username = username
 
         # Health
-        self.health = base_health
+        self.max_health = int(base_health)
+        self.health = int(base_health)
         self.stamina = base_stamina
         
         # Inventory
@@ -47,6 +50,21 @@ class Cow:
         # Layer the cow currently occupies
         self.layer = LAYER_GROUND
 
+        # Visuals
+        self.cow_sprite = None
+        try:
+            self.cow_sprite = load_image("cow.png", (self.rect.width, self.rect.height))
+        except Exception:
+            self.cow_sprite = None
+        self.dead_sprite = None
+        try:
+            self.dead_sprite = load_image("dead_cow.png", (self.rect.width, self.rect.height))
+        except Exception:
+            self.dead_sprite = None
+
+        # Aiming
+        self.aim_direction = Vector2(1, 0)
+
     def create_camera_surface(self):
         cam_w = int(self.camera_size[0] / self.zoom)
         cam_h = int(self.camera_size[1] / self.zoom)
@@ -61,6 +79,8 @@ class Cow:
         pass
 
     def handle_event(self, event):
+        if self.is_dead():
+            return
         if event.type == pygame.MOUSEWHEEL:
             if event.y > 0:
                 self.adjust_zoom(+self.zoom_step)
@@ -73,6 +93,8 @@ class Cow:
                 self.adjust_zoom(-self.zoom_step)
     
     def handle_key_event(self, key_list):
+        if self.is_dead():
+            return
         for key in key_list:
             if key == "up":
                 self.move_up()
@@ -121,9 +143,31 @@ class Cow:
     def draw(self, world_screen):
         self.rect.center = self.position
         self.renderer(world_screen)
+        # Draw weapon overlay if equipped
+        if self.has_weapon():
+            weapon = self.get_weapon()
+            sprite = None
+            if hasattr(weapon, "get_floor_sprite"):
+                sprite = weapon.get_floor_sprite()
+            if sprite is not None:
+                # Compute rotation towards aim direction
+                dir_vec = Vector2(self.aim_direction)
+                if dir_vec.length() == 0:
+                    dir_vec = Vector2(1, 0)
+                angle = -math.degrees(math.atan2(dir_vec.y, dir_vec.x))
+                rotated = pygame.transform.rotate(sprite, angle)
+                rect = rotated.get_rect(center=(int(self.position.x), int(self.position.y)))
+                world_screen.blit(rotated, rect)
 
     def _default_renderer(self, world_screen):
-        pygame.draw.rect(world_screen, self.color, self.rect)
+        if self.is_dead() and self.dead_sprite is not None:
+            rect = self.dead_sprite.get_rect(center=self.rect.center)
+            world_screen.blit(self.dead_sprite, rect)
+        elif self.cow_sprite is not None:
+            rect = self.cow_sprite.get_rect(center=self.rect.center)
+            world_screen.blit(self.cow_sprite, rect)
+        else:
+            pygame.draw.rect(world_screen, self.color, self.rect)
 
     def set_renderer(self, renderer):
         """Swap the rendering function. Signature: func(surface) -> None"""
@@ -147,6 +191,8 @@ class Cow:
         Attempts to find ammo using the configured probability.
         Returns True if ammo was found (and incremented), False otherwise.
         """
+        if self.is_dead():
+            return False
         if random.random() < self.ammo_find_probability:
             self.ammo += 1
             return True
@@ -157,6 +203,8 @@ class Cow:
         Eat action, only called when the cow is inside a grass field.
         May find ammo based on probability. Returns True if ammo found.
         """
+        if self.is_dead():
+            return False
         return self.find_ammo()
 
     def get_world_rect(self) -> pygame.Rect:
@@ -166,6 +214,8 @@ class Cow:
 
     # ----- Speed modifiers -----
     def _current_move_step(self) -> float:
+        if self.is_dead():
+            return 0.0
         step = float(self.base_move_step)
         if self._is_eating:
             step = step * max(0.0, 1.0 - self.eating_slowdown_pct)
@@ -182,6 +232,8 @@ class Cow:
         return getattr(self, "weapon", None)
 
     def _try_shoot(self):
+        if self.is_dead():
+            return False
         weapon = self.get_weapon()
         if weapon is None:
             return False
@@ -193,4 +245,31 @@ class Cow:
         return True
 
     def set_eating_intent(self, active: bool):
-        self._is_eating = bool(active)
+        if self.is_dead():
+            self._is_eating = False
+        else:
+            self._is_eating = bool(active)
+
+    def set_aim_direction(self, direction: Vector2):
+        if self.is_dead():
+            return
+        try:
+            vec = Vector2(direction)
+        except Exception:
+            vec = Vector2(1, 0)
+        self.aim_direction = vec
+
+    # ----- Health API -----
+    def take_damage(self, amount: float):
+        new_hp = max(0, int(self.health - float(amount)))
+        self.health = new_hp
+
+    def heal(self, amount: float):
+        new_hp = min(self.max_health, int(self.health + float(amount)))
+        self.health = new_hp
+
+    def set_health(self, value: float):
+        self.health = max(0, min(self.max_health, int(value)))
+
+    def is_dead(self) -> bool:
+        return self.health <= 0

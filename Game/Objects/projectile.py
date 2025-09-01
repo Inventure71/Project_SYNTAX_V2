@@ -4,7 +4,7 @@ from Game.layers import LAYER_MIDAIR
 
 
 class Projectile:
-    def __init__(self, start_pos, direction, speed: float = 16.0, color=(255, 250, 220), radius: int = 4, max_distance: float = 2400.0, sprite=None):
+    def __init__(self, start_pos, direction, speed: float = 16.0, color=(255, 250, 220), radius: int = 4, max_distance: float = 2400.0, sprite=None, damage: float = 10.0, owner=None):
         self.position = Vector2(start_pos)
         dir_vec = Vector2(direction)
         if dir_vec.length() == 0:
@@ -17,6 +17,8 @@ class Projectile:
         self.alive = True
         self.layer = LAYER_MIDAIR
         self.sprite = sprite
+        self.damage = float(damage)
+        self.owner = owner
 
     def update(self):
         if not self.alive:
