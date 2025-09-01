@@ -16,9 +16,17 @@ class WeaponPickup:
     def draw(self, surface):
         if not self.alive:
             return
-        color = getattr(self.weapon, 'floor_color', (210, 230, 255))
-        pygame.draw.rect(surface, color, self.rect, border_radius=4)
-        pygame.draw.rect(surface, (40, 46, 58), self.rect, width=1, border_radius=4)
+        sprite = None
+        if hasattr(self.weapon, 'get_floor_sprite'):
+            sprite = self.weapon.get_floor_sprite()
+        if sprite is not None:
+            # center blit
+            rect = sprite.get_rect(center=self.rect.center)
+            surface.blit(sprite, rect)
+        else:
+            color = getattr(self.weapon, 'floor_color', (210, 230, 255))
+            pygame.draw.rect(surface, color, self.rect, border_radius=4)
+            pygame.draw.rect(surface, (40, 46, 58), self.rect, width=1, border_radius=4)
 
     def handle_event(self, event):
         pass

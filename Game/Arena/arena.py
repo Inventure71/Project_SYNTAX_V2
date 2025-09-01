@@ -207,7 +207,7 @@ class Arena:
                                 if random.random() < drop_probability:
                                     gx, gy = gf.rect.center
                                     offset = random.randint(-20, 20)
-                                    pickup = WeaponPickup(Weapon(name="Pea Shooter", ammo_per_shot=1), (gx + offset, gy))
+                                    pickup = WeaponPickup(Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)), (gx + offset, gy))
                                     self.objects.append(pickup)
                                 break
                     else:
@@ -232,7 +232,10 @@ class Arena:
                         start = (int(player.position.x), int(player.position.y))
                         direction = (world_x - start[0], world_y - start[1])
                         speed = getattr(weapon, 'projectile_speed', 16.0)
-                        self.spawn_projectile(start, direction, speed)
+                        sprite = None
+                        if hasattr(weapon, 'get_projectile_sprite'):
+                            sprite = weapon.get_projectile_sprite()
+                        self.spawn_projectile(start, direction, speed, sprite)
                         # consume ammo
                         player.ammo = weapon.consume_ammo(player.ammo)
         # Forward event to children
@@ -279,8 +282,8 @@ class Arena:
             ])
             self.add_obstacle(Obstacle((x, y, w, h), base_health=health, blocking_mask=mask_choice))
 
-    def spawn_projectile(self, start_pos, direction, speed: float = 16.0):
-        proj = Projectile(start_pos, direction, speed=speed)
+    def spawn_projectile(self, start_pos, direction, speed: float = 16.0, sprite=None):
+        proj = Projectile(start_pos, direction, speed=speed, sprite=sprite)
         self.projectiles.append(proj)
 
     def _clamp_character_to_world(self, character):
