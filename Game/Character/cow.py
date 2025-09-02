@@ -43,6 +43,21 @@ class Cow:
         self.base_move_step = move_step
         self.eating_slowdown_pct = float(eating_slowdown_pct)
         self._is_eating = False
+        # Size scaling
+        self.size_scale = 1.0
+        self.min_scale = 0.6
+        self.max_scale = 1.8
+        self.scale_health_factor = 0.5   # extra max HP per +1 scale
+        self.scale_speed_factor = 0.5    # speed multiplier decrease per +1 scale (applied inversely)
+        self.base_rect_size = (self.rect.width, self.rect.height)
+
+        # Eating/Pooping cooldowns and tuning
+        self.eat_growth_percent = 0.05
+        self.poop_percent = 0.15
+        self.eat_cooldown_ms = 500
+        self.poop_cooldown_ms = 500
+        self._last_eat_ms = 0
+        self._last_poop_ms = 0
 
         # Rendering (pluggable)
         self.renderer = renderer if renderer is not None else self._default_renderer
@@ -205,7 +220,13 @@ class Cow:
         """
         if self.is_dead():
             return False
-        return self.find_ammo()
+        now = pygame.time.get_ticks()
+        if now - self._last_eat_ms < self.eat_cooldown_ms:
+            return False
+        self._last_eat_ms = now
+        grew = self._grow_on_eat()
+        ammo_found = self.find_ammo()
+        return ammo_found or grew
 
     def get_world_rect(self) -> pygame.Rect:
         r = self.rect.copy()
@@ -217,6 +238,8 @@ class Cow:
         if self.is_dead():
             return 0.0
         step = float(self.base_move_step)
+        # apply scale effect (bigger -> slower)
+        step *= max(0.1, 1.0 - (self.size_scale - 1.0) * self.scale_speed_factor)
         if self._is_eating:
             step = step * max(0.0, 1.0 - self.eating_slowdown_pct)
         return step
@@ -258,6 +281,57 @@ class Cow:
         except Exception:
             vec = Vector2(1, 0)
         self.aim_direction = vec
+
+    # ----- Size scaling mechanics -----
+    def _apply_scale_to_rect(self):
+        base_w, base_h = self.base_rect_size
+        cx, cy = self.rect.center
+        new_w = max(6, int(base_w * self.size_scale))
+        new_h = max(6, int(base_h * self.size_scale))
+        self.rect.size = (new_w, new_h)
+        self.rect.center = (int(cx), int(cy))
+        # Rescale sprites if available
+        try:
+            self.cow_sprite = load_image("cow.png", (self.rect.width, self.rect.height))
+        except Exception:
+            pass
+        try:
+            self.dead_sprite = load_image("dead_cow.png", (self.rect.width, self.rect.height))
+        except Exception:
+            pass
+
+    def _grow_on_eat(self) -> bool:
+        old_scale = self.size_scale
+        self.size_scale = min(self.max_scale, self.size_scale * (1.0 + self.eat_growth_percent))
+        if self.size_scale != old_scale:
+            # Increase max health; keep current health ratio
+            old_max = self.max_health
+            new_max = int(max(1, old_max * (1.0 + self.eat_growth_percent * self.scale_health_factor)))
+            ratio = 0 if old_max == 0 else self.health / old_max
+            self.max_health = new_max
+            self.health = max(1, int(self.max_health * ratio))
+            self._apply_scale_to_rect()
+            return True
+        return False
+
+    def poop(self) -> bool:
+        if self.is_dead():
+            return False
+        now = pygame.time.get_ticks()
+        if now - self._last_poop_ms < self.poop_cooldown_ms:
+            return False
+        self._last_poop_ms = now
+        old_scale = self.size_scale
+        self.size_scale = max(self.min_scale, self.size_scale * (1.0 - self.poop_percent))
+        if self.size_scale != old_scale:
+            old_max = self.max_health
+            new_max = int(max(1, old_max * (1.0 - self.poop_percent * self.scale_health_factor)))
+            ratio = 0 if old_max == 0 else self.health / old_max
+            self.max_health = max(1, new_max)
+            self.health = max(1, int(self.max_health * ratio))
+            self._apply_scale_to_rect()
+            return True
+        return False
 
     # ----- Health API -----
     def take_damage(self, amount: float):

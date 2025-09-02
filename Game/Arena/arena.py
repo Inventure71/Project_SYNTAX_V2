@@ -7,6 +7,7 @@ from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
 from Game.Objects import Projectile
 from Game.Objects import WeaponPickup
+from Game.Objects import Poop
 from Game.layers import LAYER_GROUND
 
 class Arena:
@@ -107,6 +108,20 @@ class Arena:
             # Final clamp to ensure still within bounds after push-out
             self._clamp_character_to_world(character)
 
+        # Poop collision hook (for future effects), and TTL cleanup is handled in Poop.update
+        for character in self.characters:
+            char_rect = character.get_world_rect() if hasattr(character, 'get_world_rect') else None
+            if char_rect is None:
+                continue
+            for obj in self.objects:
+                if hasattr(obj, 'on_character_collide') and getattr(obj, 'alive', True):
+                    try:
+                        orect = obj.rect
+                    except Exception:
+                        continue
+                    if char_rect.colliderect(orect):
+                        obj.on_character_collide(character, self)
+
         # Player pickup collision: auto-equip if none
         for character in self.characters:
             if hasattr(character, 'has_weapon') and character.has_weapon():
@@ -180,6 +195,7 @@ class Arena:
     def handle_key_event(self, key_list):
         # First, set eating intent based on current key state and context
         eating_pressed = ("eat" in key_list)
+        poop_pressed = ("poop" in key_list)
         for character in self.characters:
             # Default no eating intent
             character.set_eating_intent(False) if hasattr(character, "set_eating_intent") else None
@@ -232,6 +248,18 @@ class Arena:
                     else:
                         if hasattr(character, "eat"):
                             character.eat()
+        # Poop action spawns a persistent object
+        if poop_pressed:
+            for character in self.characters:
+                if hasattr(character, "poop"):
+                    # Make poop size based on cow's current rect and amount_percent
+                    amount = getattr(character, 'poop_percent', 0.15)
+                    changed = character.poop()
+                    if changed:
+                        base_w = max(6, int(character.rect.width * amount))
+                        base_h = max(4, int(character.rect.height * amount * 0.7))
+                        pos = (int(character.position.x), int(character.position.y) + int(character.rect.height * 0.4))
+                        self.objects.append(Poop(pos, ttl_ms=9000, size=(base_w, base_h), amount_percent=amount))
 
     def handle_event(self, event):
         # Handle shooting in arena to correctly map screen->world coords

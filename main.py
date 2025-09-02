@@ -43,6 +43,8 @@ def convert_key_to_string(key):
         keys.append("zoom_out")
     if key[pygame.K_SPACE]:
         keys.append("eat")
+    if key[pygame.K_p]:
+        keys.append("poop")
     return keys
 
 if __name__ == "__main__":
