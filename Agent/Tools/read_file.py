@@ -1,4 +1,5 @@
 import os
+from Agent.Helpers.check_file_permission import check_file_permission
 
 def read_file(file_path, line_count: bool = False):
     """
@@ -20,6 +21,9 @@ def read_file(file_path, line_count: bool = False):
             - An error message string if the file does not exist, is not a file, 
               or has an unsupported extension.
     """
+
+    if not check_file_permission(file_path):
+        return f"File {file_path} is not permitted to be read."
 
     if not os.path.exists(file_path):
         return f"File {file_path} does not exist."
