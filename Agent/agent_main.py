@@ -53,6 +53,9 @@ class AgentMain:
             system_prompt=sys_prompt,
         )
 
+    def index_codebase(self):
+        pass
+
     def plan(self, prompt: str):
         
         #entire_code = collect_directory_files_and_contents("Game")
@@ -96,6 +99,7 @@ No extra sections. No code fences around the tasks. No blank tasks. Avoid empty 
 - Keep gameplay invariants intact; integrate with existing character/weapon systems.
 - Be concrete: list exact files that will be modified or added (paths from the project root).
 - Keep wording concise (aim for ~6–12 lines per task).
+- Do not plan for tests for now.
 
 ## Deliverable
 Return ONLY the Objective and the list of tasks formatted exactly as specified above, with tasks separated by the literal separator line:

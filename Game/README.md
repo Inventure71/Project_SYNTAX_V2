@@ -64,7 +64,8 @@
   - Grass fields: eating attempts to find ammo via per-cow probability (`Cow.ammo_find_probability`).
   - Golden fields: eating never gives ammo; instead, roll `GoldenField.drop_probability` to spawn a weapon pickup (e.g., Bow).
 - **Weapons and Ammo**:
-  - You can hold at most one weapon. If unarmed and you touch a pickup, you auto-equip it.
+  - Engine supports any number of weapon types; define as many `Weapon` instances as desired. The equip/shoot/pickup/projectile pipeline is type-agnostic.
+  - You can hold at most one active weapon per cow by default. If unarmed and you touch a pickup, you auto-equip it.
   - Shooting consumes ammo according to weapon `ammo_per_shot`. Shots only occur if `can_fire(ammo)`.
   - Projectiles belong to mid-air, collide with blocking obstacles, and can damage other characters on hit.
 - **Size Scaling**:
@@ -82,7 +83,7 @@
 
 ### Extending the Game
 - **New Fields**: create a new object class with `update/draw` and add to `Arena` generation; use rect overlap checks for interaction.
-- **New Weapons**: instantiate `Weapon` with desired parameters and sprites; hook into golden-field drops or custom pickups.
+- **New Weapons**: create unlimited weapon types by instantiating `Weapon` with desired parameters and sprites. To extend drops, maintain a weapon drop pool (list of weapon factories or configs) and choose randomly when `Arena` spawns golden-field pickups.
 - **New Abilities/Objects**: implement an object with `on_character_collide(character, arena)` to define effects.
 - **Destructible Obstacles**: wire `apply_damage` and consume when `is_destroyed()`; ensure layer masks are honored.
 - **AI Variants**: subclass `Cow` and override `update()` to add behaviors (e.g., chase, avoid, team play).
@@ -103,3 +104,4 @@
 - Player and AI cannot leave world bounds or pass through blocking obstacles.
 - Weapon auto-equip only when the cow has no weapon; pickups are consumed on equip.
 - Screen-to-world aiming for accurate projectile direction and spawn.
+- Any number of weapon types can be defined; default gameplay assumes one active weapon per cow.
