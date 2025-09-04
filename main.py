@@ -5,6 +5,7 @@ import random
 import sys
 
 import pygame
+from Agent.Helpers.handle_backup import save_backup
 from Agent.agent_main import AgentMain
 from Game.Arena.arena import Arena
 from Game.Character.cow import Cow
@@ -48,6 +49,9 @@ def convert_key_to_string(key):
     return keys
 
 if __name__ == "__main__":
+
+    save_backup()
+
     #agent_main = AgentMain()
     #agent_main.run()
     #agent_main.test()
@@ -67,19 +71,6 @@ if __name__ == "__main__":
     C.FONT = FONT
     C.BIGFONT = BIG_FONT
     clock = pygame.time.Clock()
-
-    """
-    menu = Menu((0, 0, 900, 600), "Menu", FONT)
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            menu.handle_event(event)
-        menu.draw(screen)
-        pygame.display.flip()
-        pygame.time.wait(10)
-        """
 
     arena = Arena((0,0, camera_size[0], camera_size[1]), world_size, screen, world_surf, "Arena")
 

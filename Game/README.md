@@ -1,69 +1,105 @@
-# SYNTAX V2 - Game Overview
+# SYNTAX V2 - Battle Royale Developer Guide
 
-### Core Mechanics
+### High-level Concept
+- **Genre**: Battle Royale with top-down camera and large scrolling world.
+- **Goal**: Last cow standing. Players and AI roam, loot, grow/shrink via eating/pooping, and fight using weapons and projectiles.
+- **Core Loop**:
+  - Explore the world (WASD, camera follows).
+  - **Eat** in fields to grow and roll for ammo (grass) or roll for weapon drops (golden).
+  - **Equip** weapons by walking over pickups when unarmed.
+  - **Aim & Shoot** with the mouse; projectiles collide with obstacles and characters.
+  - **Manage size**: Eating grows you (more max HP, slower). Pooping shrinks you (less max HP, faster). Positioning and timing matter.
 
-- Player controls a cow in a large world with a camera view.
-- World contains grass fields, golden fields, and obstacles.
-- Hold Space to eat while in any field; this slows you down while held.
-- Ammo is found randomly only in regular grass fields.
-- Golden fields do not grant ammo; they can drop a weapon pickup instead.
-- Weapons are picked up by walking over them if you have no active weapon.
-- Left-click shoots if a weapon is equipped and ammo is sufficient.
+### Controls
+- **Move**: WASD (or arrow keys via mapping).
+- **Zoom**: E / + to zoom in, Q / - to zoom out, or mouse wheel.
+- **Eat**: Hold Space (only inside grass or golden fields). Slows movement while active.
+- **Shoot**: Left-click (if a weapon is equipped and ammo sufficient). Aims toward cursor in world space.
+- **Poop**: P to shrink and create a temporary ground object.
 
-### Layers (Heights)
+### World & Camera
+- Large world off-screen surface; the player camera crops and scales a region to the main window.
+- Camera is clamped to world bounds. Player is also clamped and cannot leave bounds.
+- `Arena.render_cameras_per_player(index)` builds the per-player camera view; input and aiming convert screen-space to world-space for accurate shooting.
 
-The game uses four height layers represented by bit flags:
-- 1) underground
-- 2) ground (cow default)
-- 3) mid-air (projectiles)
-- 4) air
+### Layer System (Heights)
+- Layers are bit flags defined in `Game/layers.py`:
+  - 1) underground
+  - 2) ground (cows)
+  - 3) mid-air (projectiles)
+  - 4) air
+- Obstacles define a blocking mask to specify which layers they affect. Collisions respect these masks.
+- Projectiles travel in the **mid-air** layer and collide with any obstacle that blocks mid-air.
 
-Obstacles specify a blocking mask to control which layers they affect (some block only ground, some ground+mid-air, some all).
+### Entities and Responsibilities
+- `Game/Arena/arena.py`:
+  - Generates world content (grass, golden fields, obstacles) with randomized positions and properties.
+  - Holds lists for `characters`, `objects`, `grass_fields`, `golden_fields`, `obstacles`, `projectiles`.
+  - Frame loop: `update()` → `draw()` → `render_cameras_per_player()` → `draw_ui()`.
+  - Resolves projectile collisions, pushes characters out of blocking obstacles, clamps to bounds.
+  - Handles pickup collisions: cows without a weapon auto-equip on contact; pickups are consumed.
+  - Input handling: sets “eating intent” when in fields, invokes cow `eat()` on grass or rolls weapon drops on golden fields, triggers poop spawn, and handles mouse-based shooting/aiming.
+- `Game/Character/cow.py`:
+  - Player/AI base class with health, stamina, ammo, size-scaling, zoom, aiming, and movement.
+  - Eating/pooping with cooldowns; eating attempts ammo find; size scaling modifies speed and max HP.
+  - Weapon API: `equip_weapon`, `has_weapon`, `get_weapon`, ammo consumption checked by weapon.
+  - Rendering: cow and weapon overlay oriented to aim direction.
+- `Game/Character/ai_cow.py`:
+  - Simple wandering AI extending `Cow` (random direction changes over time).
+- `Game/Objects/*.py`:
+  - `grass.py` → semi-transparent green patches; eating here can yield ammo.
+  - `golden_field.py` → semi-transparent gold patches; eating here never grants ammo, rolls a weapon pickup drop chance near the field center.
+  - `obstacle.py` → healthful blocking objects respecting layer masks; currently not destructible in gameplay.
+  - `weapon_pickup.py` → floor item that equips on contact if the cow has no weapon.
+  - `projectile.py` → mid-air bullets with speed, max distance, damage, and optional sprite.
+  - `poop.py` → temporary ground object spawned by cows; currently placeholder for future effects and times out.
+- `Game/Weapons/weapon.py`:
+  - Data-driven weapon with `ammo_per_shot`, `projectile_speed`, `damage`, and optional floor/projectile sprites.
+  - Methods: `can_fire(ammo)`, `consume_ammo(ammo)`, and sprite helpers.
 
-### Movement & Camera
+### Battle Royale Mechanics to Keep
+- **Last cow standing** framing; health reaches 0 → cow is dead (rendered dead sprite when applicable).
+- **Eating slows movement** by `eating_slowdown_pct` while active.
+- **Grass vs Golden parity**:
+  - Grass fields: eating attempts to find ammo via per-cow probability (`Cow.ammo_find_probability`).
+  - Golden fields: eating never gives ammo; instead, roll `GoldenField.drop_probability` to spawn a weapon pickup (e.g., Bow).
+- **Weapons and Ammo**:
+  - You can hold at most one weapon. If unarmed and you touch a pickup, you auto-equip it.
+  - Shooting consumes ammo according to weapon `ammo_per_shot`. Shots only occur if `can_fire(ammo)`.
+  - Projectiles belong to mid-air, collide with blocking obstacles, and can damage other characters on hit.
+- **Size Scaling**:
+  - Eating grows you: increases `size_scale` up to `max_scale`; recalculates `max_health` and preserves health ratio; reduces speed via scale factor.
+  - Poop shrinks you: decreases `size_scale` down to `min_scale`; reduces `max_health` accordingly; speed effectively increases back toward base.
+- **Obstacle Blocking**:
+  - Collisions resolve by minimal push vectors, repeated a few iterations to separate overlaps.
+  - Only obstacles with masks including the cow’s layer will block.
+- **Bounds**:
+  - Characters are clamped to world bounds every frame; camera and projectiles also guard against leaving the world.
 
-- WASD: move.
-- E/+ and Q/-: zoom in/out.
-- Space: eat (when inside a field).
-- Movement speed is reduced by a percentage while eating (`eating_slowdown_pct`).
-- Player is clamped within world bounds.
+### UI and Aiming
+- HUD shows ammo, weapon name, and HP for the primary player.
+- Mouse movement updates the cow’s `aim_direction`; left-click casts to world space and spawns a projectile.
 
-### Fields
-
-- GrassField: semi-transparent green patches; eating here rolls to find ammo with per-cow probability.
-- GoldenField: semi-transparent gold patches; eating here never gives ammo. Instead, a small field-specific probability rolls to drop a weapon pickup near the field center.
-
-### Weapons & Projectiles
-
-- Weapons: `name`, `ammo_per_shot`, `projectile_speed`, and floor display props (`floor_rect_size`, `floor_color`).
-- Weapon pickups appear on the floor and are consumed upon collision by cows that do not already have a weapon.
-- Projectiles fly in the mid-air layer and are destroyed when hitting obstacles that block mid-air.
-- Ammo consumption is per weapon (`ammo_per_shot`).
-
-### Obstacles
-
-- Obstacles have health and a blocking mask.
-- They currently cannot be damaged (damage APIs exist but are unused).
-- Collision prevents cows from passing through obstacles that block their current layer.
-
-### Extensibility
-
-- Add more field types by creating new objects with draw/update logic and integrating into `Arena`.
-- Add new weapons by instantiating `Weapon` with different parameters.
-- Adjust cow parameters (speed, ammo find probability, eating slowdown) via `Cow` init.
+### Extending the Game
+- **New Fields**: create a new object class with `update/draw` and add to `Arena` generation; use rect overlap checks for interaction.
+- **New Weapons**: instantiate `Weapon` with desired parameters and sprites; hook into golden-field drops or custom pickups.
+- **New Abilities/Objects**: implement an object with `on_character_collide(character, arena)` to define effects.
+- **Destructible Obstacles**: wire `apply_damage` and consume when `is_destroyed()`; ensure layer masks are honored.
+- **AI Variants**: subclass `Cow` and override `update()` to add behaviors (e.g., chase, avoid, team play).
 
 ### File Guide
-
-- `Game/Arena/arena.py`: world generation, update/draw loop, collisions, UI, pickups, projectile management.
-- `Game/Character/cow.py`: player avatar, movement, camera, eating, ammo, weapon equip/shoot hooks.
-- `Game/Objects/grass.py`, `golden_field.py`, `obstacle.py`, `projectile.py`, `weapon_pickup.py`.
-- `Game/Weapons/weapon.py`: weapon definition.
+- `Game/Arena/arena.py`: world generation, update/draw loop, collisions, UI, input mapping, pickups, projectile management.
+- `Game/Character/cow.py`: movement, zoom, size scaling, health, eating/pooping, weapon handling, rendering, aiming.
+- `Game/Character/ai_cow.py`: simple wandering AI.
+- `Game/Objects/grass.py`, `golden_field.py`, `obstacle.py`, `projectile.py`, `weapon_pickup.py`, `poop.py`.
+- `Game/Weapons/weapon.py`: weapon specification and sprites.
 - `Game/layers.py`: layer constants and helpers.
+- `Game/assets.py`: image loader with simple cache.
 
-### Rules to Preserve
-
-- 4-layer system; collisions respect layer masks.
-- Golden fields never drop ammo; only weapon pickups with a chance.
-- Eating slows the cow by a configured percentage.
-- Projectiles occupy mid-air and collide with obstacles that block mid-air.
-- Player cannot leave world bounds or pass through blocking obstacles.
+### Invariants / Rules to Preserve
+- 4-layer system with bitmask-based blocking; projectiles in mid-air collide accordingly.
+- Golden fields never drop ammo; they only roll weapon pickups.
+- Eating slows movement by configured percentage and triggers growth.
+- Player and AI cannot leave world bounds or pass through blocking obstacles.
+- Weapon auto-equip only when the cow has no weapon; pickups are consumed on equip.
+- Screen-to-world aiming for accurate projectile direction and spawn.

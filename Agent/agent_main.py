@@ -1,8 +1,12 @@
 
 
+from ast import List
+import re
 from Agent.Tools.get_project_structure import get_project_structure
 from Agent.Tools.helpers_ignore import collect_directory_files_and_contents
 from Agent.chatGPT import ChatGPT
+
+# TODO: Implement an Indexing of the codebase in the game folder, where a model (small) goes function by function and saves what they do and what they handle in 2 lines, this should all be saved in a way such that it can easily be updated partially (when a function get's modifed) or when a new one gets added. Also this description should be retrivable by name of file contatining it and the function name.
 
 
 class AgentMain:
@@ -49,7 +53,8 @@ class AgentMain:
             system_prompt=sys_prompt,
         )
 
-    def plan(self):
+    def plan(self, prompt: str):
+        
         #entire_code = collect_directory_files_and_contents("Game")
         #print(entire_code)
 
@@ -57,6 +62,57 @@ class AgentMain:
         # CREATE A CHECKLIST OF TASKS IN A FORMATTED WAY SO THAT THE MODEL CAN EASILY UNDERSTAND AND EXECUTE THE TASKS + UPDATE ALREADY DONE TASKS
 
         # FOR EACH TASK SPECIFY WHAT FILES ARE INVOLVED SO THAT THE MODEL DOESN'T NEED TO READ THE ENTIRE CODEBASE
+        with open("Game/README.md", "r") as file:
+            project_documentation = file.read()
+        
+        prompt = f"""
+You are an advanced task-planning agent for the SYNTAX V2 game project.
+
+## Mission
+Given a goal, produce a one-page Work Order that **fulfills the goal** by splitting the work into small, mergeable tasks suited for someone with limited continuous focus time.
+
+## Output format (strict)
+- Start with a 1–2 sentence Objective.
+- Then list tasks. **Each task MUST be separated by a line containing exactly:**
+---TASK---
+- Inside each task, include ONLY these fields (in this order), each on its own line and starting with the label exactly as written:
+Goal of the specific task: <one sentence result>
+What needs to be done: <short bullet list; one line per bullet, using "- ">
+Files likely to be touched: <one path per line, no extra text>
+
+No extra sections. No code fences around the tasks. No blank tasks. Avoid empty fields.
+
+## Context you MUST use (and how)
+- **Prompt to FULLFILL the goal**  
+  This is the user’s request (“what to build”). Use it to define the Objective and to shape the scope of each task. If the prompt is ambiguous, choose the most reasonable interpretation and proceed; do not ask questions.
+- **Project structure**  
+  This is the canonical map of directories and files. Use it to (a) pick correct file paths, (b) avoid inventing new paths unless absolutely necessary, and (c) keep file touches minimal and precise.
+- **Project documentation**  
+  Describes gameplay rules, invariants (e.g., layer masks, pickups, bounds), and extension rules. **You must preserve all invariants** (e.g., golden fields never drop ammo; projectiles in mid-air layer; bounds clamping). When designing tasks, explain changes only through allowed extension points.
+
+## Planning rules
+- Prefer 6–12 small tasks over a few large ones.
+- Each task should be independently understandable and mergeable.
+- Keep gameplay invariants intact; integrate with existing character/weapon systems.
+- Be concrete: list exact files that will be modified or added (paths from the project root).
+- Keep wording concise (aim for ~6–12 lines per task).
+
+## Deliverable
+Return ONLY the Objective and the list of tasks formatted exactly as specified above, with tasks separated by the literal separator line:
+---TASK---
+
+(Do not include this instruction block in your output.)
+## Context:
+- **Prompt to FULLFILL the goal**: \n{prompt} 
+- **Project structure**: \n{self.project_structure_complex}
+- **Project documentation**: \n{project_documentation}
+        """
+
+        # Split on a line that is exactly ---TASK--- (allowing surrounding whitespace)
+        parts = re.split(r'^\s*---TASK---\s*$', response.strip(), flags=re.MULTILINE)
+        # Drop empties and leading/trailing whitespace per part
+        parts = [p.strip() for p in parts if p.strip()]
+
 
         pass
 

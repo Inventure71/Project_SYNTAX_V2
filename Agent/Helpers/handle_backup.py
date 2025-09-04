@@ -1,8 +1,10 @@
+import os
 import shutil
 
 def delete_backup(backup_path: str = "Backup") -> None:
     """
     Delete a backup of the file.
+    NO MODEL CAN USE THIS TOOL
     """
     shutil.rmtree(backup_path, ignore_errors=True)
 
@@ -10,6 +12,7 @@ def delete_backup(backup_path: str = "Backup") -> None:
 def save_backup(file_path: str = "Game", backup_path: str = "Backup") -> None:
     """
     Save a backup of the file.
+    NO MODEL CAN USE THIS TOOL
     """
 
     shutil.copytree(file_path, backup_path, dirs_exist_ok=True)
@@ -18,7 +21,11 @@ def save_backup(file_path: str = "Game", backup_path: str = "Backup") -> None:
 def restore_backup(file_path: str = "Game", backup_path: str = "Backup", auto_delete: bool = False, complete_replace: bool = True) -> None:
     """
     Restore a backup of the file.
+    NO MODEL CAN USE THIS TOOL
     """
+    if not os.path.exists(backup_path):
+        return
+
     if complete_replace:
         shutil.rmtree(file_path, ignore_errors=True)
 
