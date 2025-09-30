@@ -5,6 +5,7 @@ from pygame import Vector2
 from Game.constants import FONT, YELLOW, ZOOM_STEP, ZOOM_MAX
 from Game.layers import LAYER_GROUND
 from Game.assets import load_image
+from Game.Abilities.ability import AbilityManager
 
 class Cow:
     def __init__(self, rect, username, starting_position, base_health: int = 100, base_stamina: int = 100, camera_display_size: int = (0,0), world_display_size: int = (0,0), color=YELLOW, renderer=None, move_step: int = 1, ammo_find_probability: float = 0.2, starting_ammo: int = 0, eating_slowdown_pct: float = 0.4):
@@ -79,6 +80,9 @@ class Cow:
 
         # Aiming
         self.aim_direction = Vector2(1, 0)
+        
+        # Abilities
+        self.ability_manager = AbilityManager(self)
 
     def create_camera_surface(self):
         cam_w = int(self.camera_size[0] / self.zoom)
@@ -152,8 +156,11 @@ class Cow:
             self.move_down()
 
     # ----- Update/Render -----
-    def update(self):
+    def update(self, arena=None):
         self.handle_collisions()
+        # Update abilities
+        if hasattr(self, 'ability_manager'):
+            self.ability_manager.update_all(arena)
 
     def draw(self, world_screen):
         self.rect.center = self.position
@@ -347,3 +354,15 @@ class Cow:
 
     def is_dead(self) -> bool:
         return self.health <= 0
+    
+    # ----- Ability API -----
+    def add_ability(self, ability_id: str, ability):
+        """Add an ability to this character."""
+        if hasattr(self, 'ability_manager'):
+            self.ability_manager.add_ability(ability_id, ability)
+    
+    def use_ability(self, ability_id: str, arena=None, **kwargs) -> bool:
+        """Use an ability by ID."""
+        if hasattr(self, 'ability_manager'):
+            return self.ability_manager.use_ability(ability_id, arena, **kwargs)
+        return False

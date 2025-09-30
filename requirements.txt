@@ -1,0 +1,10 @@
+# Game Engine
+pygame>=2.5.0
+
+# AI/Agent Dependencies
+openai>=1.0.0
+google-genai>=1.0.0
+python-dotenv>=1.0.0
+
+# Utilities (if needed)
+# Add any additional dependencies here

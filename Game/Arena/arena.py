@@ -32,6 +32,11 @@ class Arena:
         self.golden_fields = []
         self.obstacles = []
         self.projectiles = []
+        
+        # Battle Royale state
+        self.game_over = False
+        self.winner = None
+        self.game_start_time = pygame.time.get_ticks()
 
         # Generate some world content
         self._generate_world()
@@ -59,9 +64,17 @@ class Arena:
         #self.handle_event(event)
 
     def update(self):
+        # Check for game over condition
+        if not self.game_over:
+            self._check_victory_condition()
+        
+        # Don't update if game is over
+        if self.game_over:
+            return
+        
         for character in self.characters:
             if hasattr(character, "update"):
-                character.update()
+                character.update(arena=self)
         for object in self.objects:
             if hasattr(object, "update"):
                 object.update()
@@ -175,6 +188,12 @@ class Arena:
         # Basic HUD with ammo count for the first character
         if self.font is None:
             self.font = pygame.font.SysFont(None, 22)
+        
+        # Show game over screen
+        if self.game_over:
+            self._draw_game_over_ui()
+            return
+        
         if len(self.characters) == 0:
             return
         player = self.characters[0]
@@ -191,6 +210,11 @@ class Arena:
             health_str = f" | HP: {health}/{max_health}"
         text_surf = self.font.render(f"Ammo: {ammo} | Weapon: {weapon_name}{health_str}", True, WHITE)
         self.screen.blit(text_surf, (12, 10))
+        
+        # Show alive count
+        alive_count = sum(1 for c in self.characters if not (hasattr(c, 'is_dead') and c.is_dead()))
+        count_surf = self.font.render(f"Alive: {alive_count}/{len(self.characters)}", True, WHITE)
+        self.screen.blit(count_surf, (12, 35))
     
     def handle_key_event(self, key_list):
         # First, set eating intent based on current key state and context
@@ -406,3 +430,63 @@ class Arena:
         self.draw()
         self.render_cameras_per_player(0)
         self.draw_ui()
+    
+    def _check_victory_condition(self):
+        """Check if the game should end (only one cow alive or all dead)."""
+        alive_characters = [c for c in self.characters if not (hasattr(c, 'is_dead') and c.is_dead())]
+        
+        if len(alive_characters) == 0:
+            # Everyone died
+            self.game_over = True
+            self.winner = None
+        elif len(alive_characters) == 1:
+            # We have a winner!
+            self.game_over = True
+            self.winner = alive_characters[0]
+    
+    def _draw_game_over_ui(self):
+        """Draw the game over screen."""
+        if self.font is None:
+            self.font = pygame.font.SysFont(None, 22)
+        
+        big_font = pygame.font.SysFont(None, 48)
+        medium_font = pygame.font.SysFont(None, 32)
+        
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self.rect.width, self.rect.height))
+        overlay.set_alpha(180)
+        overlay.fill((20, 20, 30))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Title
+        if self.winner is not None:
+            title = "VICTORY!"
+            winner_name = getattr(self.winner, 'username', 'Unknown')
+            subtitle = f"{winner_name} wins!"
+            title_color = (100, 255, 100)
+        else:
+            title = "GAME OVER"
+            subtitle = "No survivors..."
+            title_color = (255, 100, 100)
+        
+        title_surf = big_font.render(title, True, title_color)
+        title_rect = title_surf.get_rect(center=(self.rect.width // 2, self.rect.height // 2 - 50))
+        self.screen.blit(title_surf, title_rect)
+        
+        subtitle_surf = medium_font.render(subtitle, True, WHITE)
+        subtitle_rect = subtitle_surf.get_rect(center=(self.rect.width // 2, self.rect.height // 2 + 10))
+        self.screen.blit(subtitle_surf, subtitle_rect)
+        
+        # Game duration
+        duration_ms = pygame.time.get_ticks() - self.game_start_time
+        duration_s = duration_ms // 1000
+        duration_text = f"Game Duration: {duration_s}s"
+        duration_surf = self.font.render(duration_text, True, (200, 200, 200))
+        duration_rect = duration_surf.get_rect(center=(self.rect.width // 2, self.rect.height // 2 + 60))
+        self.screen.blit(duration_surf, duration_rect)
+        
+        # Instructions
+        restart_text = "Press R to restart or ESC to quit"
+        restart_surf = self.font.render(restart_text, True, (150, 150, 150))
+        restart_rect = restart_surf.get_rect(center=(self.rect.width // 2, self.rect.height // 2 + 100))
+        self.screen.blit(restart_surf, restart_rect)
