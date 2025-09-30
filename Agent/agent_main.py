@@ -727,12 +727,21 @@ Is the implementation correct and complete?"""
             print(f"  Effects needed: {results['effect_types'] if results['has_effects'] else 'None'}")
             
             # Step 2: Modify Cow class if effects are needed
-            if results["has_effects"]:
-                print("\n🔧 Modifying Cow class for effects...")
-                cow_modified = self._add_effects_to_cow(results["effect_types"])
+            # Filter out projectile-only behaviors (not character effects)
+            projectile_only_effects = ["projectile_behavior_zigzag", "projectile_behavior_homing", 
+                                       "projectile_behavior_bouncing", "impact_splitting", 
+                                       "impact_explosion", "piercing"]
+            character_effects = [e for e in results["effect_types"] if e not in projectile_only_effects]
+            
+            if character_effects:
+                print(f"\n🔧 Modifying Cow class for character effects: {character_effects}...")
+                cow_modified = self._add_effects_to_cow(character_effects)
                 if cow_modified:
                     results["files_modified"].append("Game/Character/cow.py")
                     print("  ✓ Added effect support to Cow class")
+            elif results["has_effects"]:
+                print(f"\n✓ Weapon has projectile-only behaviors: {results['effect_types']}")
+                print("  (No character effects needed)")
             
             # Step 3: Create weapon file with effect application
             print("\n🔨 Creating weapon file...")
@@ -820,11 +829,20 @@ Your task is to THOROUGHLY analyze the weapon description and create a COMPLETE 
 
 ## Analysis Checklist:
 1. **Effect Detection**: Does this weapon have ANY special behavior beyond basic damage?
+   
+   **CHARACTER EFFECTS** (apply to hit targets, need Cow class methods):
    - Movement effects: knockback, pull, teleport, dash
    - Status effects: freeze, slow, stun, burn, poison, blind
    - Buff/Debuff: damage boost, armor reduction, lifesteal
-   - Projectile behavior: homing, bouncing, piercing, splitting, zigzag
-   - Area effects: explosion, chain lightning, aura
+   
+   **PROJECTILE BEHAVIORS** (inherent to projectile, NO Cow methods):
+   - Movement: projectile_behavior_zigzag, projectile_behavior_homing, projectile_behavior_bouncing
+   - Impact: impact_splitting, impact_explosion, piercing
+   
+   IMPORTANT: Distinguish between character effects and projectile behaviors!
+   - Zigzag pattern = projectile_behavior_zigzag (not a character effect)
+   - Splitting on impact = impact_splitting (not a character effect)
+   - Freeze target = freeze (IS a character effect)
 
 2. **Effect Details**: For EACH effect, specify:
    - Duration (in milliseconds)
@@ -1426,39 +1444,73 @@ In the `on_character_hit` method:
 3. Apply each effect using the character's apply_effectname() method
 4. Pass correct parameters based on effect type
 
-### 3. Common Effect Patterns
-- **Movement effects** (knockback): Pass velocity vector and duration
-  ```python
-  target.apply_knockback(vector_x, vector_y, duration_ms)
-  ```
-- **Status effects** (freeze, slow): Pass duration and magnitude
-  ```python
-  target.apply_freeze(duration_ms, slow_percent)
-  ```
-- **Simple effects** (stun, burn): Pass duration only
-  ```python
-  target.apply_stun(duration_ms)
-  ```
+### 3. Effect Type Patterns
 
-### 4. Complete Example
+**CHARACTER EFFECTS** (applied to target in on_character_hit):
+- **Movement effects** (knockback): `target.apply_knockback(vector_x, vector_y, duration_ms)`
+- **Status effects** (freeze, slow): `target.apply_freeze(duration_ms, slow_percent)`
+- **Simple effects** (stun, burn): `target.apply_stun(duration_ms)`
+
+**PROJECTILE BEHAVIORS** (implemented in projectile class itself):
+- **projectile_behavior_zigzag**: Override update() to move in sine wave pattern
+- **projectile_behavior_homing**: Override update() to track nearest target
+- **impact_splitting**: In on_character_hit(), spawn 3 new projectiles in random directions
+- **impact_explosion**: In on_character_hit(), damage all nearby characters
+- **piercing**: Set self.can_pierce = True, don't set alive = False on hit
+
+### 4. Examples
+
+**Example 1: Character Effect (Freeze)**
 ```python
-class ExampleProjectile(Projectile):
+class FreezeProjectile(Projectile):
     def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
-        # CRITICAL: Pass color and radius explicitly
-        super().__init__(position, direction, speed, (255, 100, 50), 4, 2400.0, sprite, damage, owner)
-        self.effect_types = ["freeze"]
-        self.effect_details = {"freeze": {"duration_ms": 3000, "slow_percent": 0.5}}
+        super().__init__(position, direction, speed, (100, 150, 255), 4, 2400.0, sprite, damage, owner)
     
     def on_character_hit(self, target, arena):
-        # Apply damage
         if hasattr(target, 'take_damage'):
             target.take_damage(self.damage)
-        
-        # Apply effects
         if not hasattr(target, 'is_dead') or not target.is_dead():
             if hasattr(target, 'apply_freeze'):
                 target.apply_freeze(3000, 0.5)
-        
+        self.alive = False
+```
+
+**Example 2: Zigzag Behavior**
+```python
+class ZigzagProjectile(Projectile):
+    def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
+        super().__init__(position, direction, speed, (255, 200, 0), 4, 2400.0, sprite, damage, owner)
+        self.time = 0
+    
+    def update(self, arena):
+        import math
+        # Zigzag motion
+        perpendicular = Vector2(-self.velocity.y, self.velocity.x).normalize()
+        offset = math.sin(self.time * 0.2) * 3.0
+        self.position += self.velocity + perpendicular * offset
+        self.time += 1
+        self.distance_traveled += self.speed
+        if self.distance_traveled >= self.max_distance:
+            self.alive = False
+```
+
+**Example 3: Impact Splitting**
+```python
+class SplittingProjectile(Projectile):
+    def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
+        super().__init__(position, direction, speed, (255, 150, 50), 4, 2400.0, sprite, damage, owner)
+    
+    def on_character_hit(self, target, arena):
+        if hasattr(target, 'take_damage'):
+            target.take_damage(self.damage)
+        # Spawn 3 smaller projectiles
+        import random
+        from Game.Objects.projectile import Projectile
+        for _ in range(3):
+            angle = random.uniform(0, 2 * 3.14159)
+            direction = Vector2(math.cos(angle), math.sin(angle))
+            arena.spawn_projectile(self.position.copy(), direction, self.speed * 0.8, 
+                                 damage=self.damage * 0.5, owner=self.owner)
         self.alive = False
 ```
 
@@ -1961,13 +2013,30 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                     validation["errors"].append("Custom projectile missing on_character_hit method")
                     validation["has_errors"] = True
                 
-                # Verify projectile applies all effects
+                # Verify projectile implements required behaviors
+                # For projectile-only behaviors, check implementation differently
+                projectile_only_effects = ["projectile_behavior_zigzag", "projectile_behavior_homing", 
+                                           "projectile_behavior_bouncing", "impact_splitting", 
+                                           "impact_explosion", "piercing"]
+                
                 for effect in effect_types:
-                    if f"apply_{effect}" in proj_code:
-                        validation["checks_passed"].append(f"Projectile applies {effect} effect")
+                    if effect in projectile_only_effects:
+                        # Check for behavior implementation (update method, impact handling, etc.)
+                        if "zigzag" in effect and ("sin(" in proj_code or "cos(" in proj_code or "update" in proj_code):
+                            validation["checks_passed"].append(f"Projectile implements {effect} behavior")
+                        elif "splitting" in effect and ("spawn" in proj_code or "split" in proj_code):
+                            validation["checks_passed"].append(f"Projectile implements {effect} behavior")
+                        elif "homing" in effect and ("target" in proj_code or "track" in proj_code):
+                            validation["checks_passed"].append(f"Projectile implements {effect} behavior")
+                        else:
+                            validation["warnings"].append(f"Projectile may not fully implement {effect} (check manually)")
                     else:
-                        validation["errors"].append(f"Projectile doesn't apply {effect} effect")
-                        validation["has_errors"] = True
+                        # Character effect - should call apply_effect on target
+                        if f"apply_{effect}" in proj_code:
+                            validation["checks_passed"].append(f"Projectile applies {effect} effect")
+                        else:
+                            validation["errors"].append(f"Projectile doesn't apply {effect} effect")
+                            validation["has_errors"] = True
                         
             except FileNotFoundError:
                 validation["errors"].append(f"Projectile file not found: {projectile_file}")
@@ -1976,14 +2045,20 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                 validation["errors"].append(f"Syntax error in projectile file: {e}")
                 validation["has_errors"] = True
         
-        # Check 3: Effects exist in Cow class
-        if has_effects:
+        # Check 3: Character effects exist in Cow class
+        # Filter out projectile-only behaviors
+        projectile_only_effects = ["projectile_behavior_zigzag", "projectile_behavior_homing", 
+                                   "projectile_behavior_bouncing", "impact_splitting", 
+                                   "impact_explosion", "piercing"]
+        character_effects = [e for e in effect_types if e not in projectile_only_effects]
+        
+        if character_effects:
             try:
                 from Agent.Tools.read_file import read_file
                 cow_lines = read_file("Game/Character/cow.py", line_count=False)
                 cow_code = "".join(cow_lines) if isinstance(cow_lines, list) else cow_lines
                 
-                for effect in effect_types:
+                for effect in character_effects:
                     # Check state variable
                     if f"self.is_{effect}" in cow_code:
                         validation["checks_passed"].append(f"Cow has is_{effect} state")
@@ -2001,6 +2076,8 @@ npc.equip_weapon(create_{weapon_name.lower()}())
             except Exception as e:
                 validation["errors"].append(f"Error checking Cow class: {e}")
                 validation["has_errors"] = True
+        elif has_effects:
+            validation["checks_passed"].append("Weapon has projectile-only behaviors (no character effects needed)")
         
         # Check 4: Weapon in Arena loot pool
         try:
@@ -2076,9 +2153,14 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                         print(f"    ✓ Added {effect} effect")
                 
                 # Handle missing effect application in projectile
-                elif "Projectile doesn't apply" in error:
-                    effect = error.split("apply")[1].split("effect")[0].strip()
-                    print(f"  Fixing: Updating projectile to apply {effect}...")
+                elif "Projectile doesn't apply" in error or "may not fully implement" in error:
+                    effect = error.split("apply")[1].split("effect")[0].strip() if "apply" in error else error.split("implement")[1].split("(")[0].strip()
+                    print(f"  Fixing: Updating projectile for {effect}...")
+                    # Delete old projectile first
+                    import os
+                    proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                    if os.path.exists(proj_file):
+                        os.remove(proj_file)
                     # Recreate projectile with all effects
                     projectile_file = self._create_effect_projectile(weapon_plan)
                     if projectile_file:
