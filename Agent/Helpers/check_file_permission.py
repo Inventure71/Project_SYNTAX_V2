@@ -4,7 +4,7 @@ import json
 
 # Default: enable whitelist mode so tools may only access files under specific roots
 WHITELIST_MODE = True
-WHITELIST_DIRS = ["Game"]  # relative to workspace root (cwd at tool runtime)
+WHITELIST_DIRS = ["Game", "Backup"]  # relative to workspace root (cwd at tool runtime)
 
 
 def _load_blocklist():

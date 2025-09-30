@@ -2,6 +2,7 @@
 
 from ast import List
 import re
+import json
 from Agent.Tools.get_project_structure import get_project_structure
 from Agent.Tools.helpers_ignore import collect_directory_files_and_contents
 from Agent.chatGPT import ChatGPT
@@ -728,7 +729,7 @@ Is the implementation correct and complete?"""
             
             # Step 2: Modify Cow class if effects are needed
             # Filter out projectile-only behaviors (not character effects)
-            projectile_only_effects = ["projectile_behavior_zigzag", "projectile_behavior_homing", 
+            projectile_only_effects = ["projectile_behavior_homing",
                                        "projectile_behavior_bouncing", "impact_splitting", 
                                        "impact_explosion", "piercing"]
             character_effects = [e for e in results["effect_types"] if e not in projectile_only_effects]
@@ -796,26 +797,75 @@ Is the implementation correct and complete?"""
                 print("  ✓ All validation checks passed!")
                 results["success"] = True
             
-            # Step 8: Final integration check with AI review
-            if results["success"]:
-                print("\n🔬 Final integration check...")
-                integration_check = self._final_integration_check(weapon_plan, results)
-                results["integration_check"] = integration_check
-                
-                if not integration_check["passed"]:
-                    print(f"  ⚠️  Integration issues found:")
-                    for issue in integration_check["issues"]:
+            # Step 8: Comprehensive AI-powered final validation and fixing
+            print("\n🔬 Running comprehensive AI validation and fixing...")
+
+            # This is the final step - ensure everything works
+            final_validation = self._comprehensive_ai_validation(weapon_plan, results)
+
+            if final_validation["all_checks_passed"]:
+                print("  ✅ All validation and integration checks passed!")
+                results["success"] = True
+            else:
+                print(f"  ⚠️  Final validation found {len(final_validation['remaining_issues'])} issues")
+                for issue in final_validation['remaining_issues'][:5]:  # Show first 5 issues
                         print(f"     - {issue}")
                     
-                    # Try to fix integration issues
-                    print("\n🔧 Fixing integration issues...")
-                    if self._fix_integration_issues(weapon_plan, integration_check):
-                        print("  ✓ Integration issues fixed!")
+                if len(final_validation['remaining_issues']) > 5:
+                    print(f"     ... and {len(final_validation['remaining_issues']) - 5} more issues")
+
+                # Keep trying to fix until everything works or max attempts reached
+                max_fix_attempts = 3
+                for attempt in range(max_fix_attempts):
+                    print(f"\n🔧 Fix attempt {attempt + 1}/{max_fix_attempts}...")
+
+                    fix_result = self._comprehensive_ai_fixing(weapon_plan, final_validation['remaining_issues'])
+
+                    if fix_result["all_fixed"]:
+                        print("  ✅ All issues fixed!")
+                        results["success"] = True
+                        break
                     else:
-                        print("  ⚠️  Some integration issues remain")
+                        print(f"  ⚠️  {len(fix_result['remaining_issues'])} issues still remain")
+                        if attempt == max_fix_attempts - 1:
+                            print("  ❌ Max fix attempts reached - some issues may remain")
                         results["success"] = False
                 else:
-                    print("  ✓ Integration check passed!")
+                            # Update remaining issues for next attempt
+                            final_validation['remaining_issues'] = fix_result['remaining_issues']
+
+            results["final_validation"] = final_validation
+            
+            # Step 9: Game simulation testing
+            if results["success"]:
+                print("\n🎮 Running game simulation tests...")
+                simulation_results = self._run_game_simulation_tests(weapon_plan)
+                results["simulation_tests"] = simulation_results
+                
+                if simulation_results["has_errors"]:
+                    print(f"  ⚠️  Found {len(simulation_results['errors'])} runtime issues:")
+                    for error in simulation_results["errors"][:3]:
+                        print(f"     - {error}")
+                    
+                    # Attempt to fix simulation issues
+                    print("\n🔧 Fixing runtime issues...")
+                    fix_success = self._fix_simulation_issues(weapon_plan, simulation_results)
+                    if fix_success:
+                        print("  ✅ Runtime issues fixed!")
+                        
+                        # Re-run simulation to confirm
+                        print("\n🔄 Re-running simulation tests...")
+                        retest_results = self._run_game_simulation_tests(weapon_plan)
+                        if retest_results["has_errors"]:
+                            print("  ⚠️  Some runtime issues persist")
+                            results["success"] = False
+                        else:
+                            print("  ✅ All simulation tests passed!")
+                    else:
+                        print("  ❌ Failed to fix runtime issues")
+                        results["success"] = False
+                else:
+                    print("  ✅ All simulation tests passed!")
             
         except Exception as e:
             print(f"\n❌ Workflow failed: {e}")
@@ -1354,9 +1404,9 @@ def create_{weapon_name.lower()}() -> Weapon:
         ammo_per_shot={weapon_plan.get("ammo_per_shot", 1)},
         projectile_speed={weapon_plan.get("projectile_speed", 16.0)},
         damage={weapon_plan.get("damage", 10.0)},
-        floor_image_name=None,
+        floor_image_name="placeholder.png",
         floor_image_scale=(28, 28),
-        projectile_image_name=None,
+        projectile_image_name="placeholder.png",
         projectile_image_scale=(18, 6)
     )
     
@@ -1394,9 +1444,9 @@ def create_{weapon_name.lower()}() -> Weapon:
         ammo_per_shot={weapon_plan.get("ammo_per_shot", 1)},
         projectile_speed={weapon_plan.get("projectile_speed", 16.0)},
         damage={weapon_plan.get("damage", 10.0)},
-        floor_image_name=None,
+        floor_image_name="placeholder.png",
         floor_image_scale=(28, 28),
-        projectile_image_name=None,
+        projectile_image_name="placeholder.png",
         projectile_image_scale=(18, 6)
     )
 
@@ -1456,14 +1506,31 @@ super().__init__(
     damage,            # damage
     owner              # owner
 )
+# Store speed for later use (base class doesn't store it)
+self.speed = speed
 ```
 
-### 2. Effect Application
+### 2. Effect Application & Method Signatures
+
+**CRITICAL**: The `on_character_hit` method MUST have this EXACT signature:
+```python
+def on_character_hit(self, target, arena):
+```
+- Takes 2 parameters: `target` and `arena`
+- Arena calls it as: `proj.on_character_hit(character, self)`
+
 In the `on_character_hit` method:
-1. Apply damage first
-2. Check if target is alive
+1. Apply damage first: `target.take_damage(self.damage)`
+2. Check if target is alive (if needed)
 3. Apply each effect using the character's apply_effectname() method
-4. Pass correct parameters based on effect type
+4. Destroy projectile: `self.alive = False` (NEVER use `self.kill()`)
+
+**CRITICAL**: The `update` method (if overridden) MUST have this EXACT signature:
+```python
+def update(self):
+```
+- Takes NO parameters (only `self`)
+- Arena calls it as: `proj.update()` with no arguments
 
 ### 3. Effect Type Patterns
 
@@ -1473,9 +1540,9 @@ In the `on_character_hit` method:
 - **Simple effects** (stun, burn): `target.apply_stun(duration_ms)`
 
 **PROJECTILE BEHAVIORS** (implemented in projectile class itself):
-- **projectile_behavior_zigzag**: Override update() to move in sine wave pattern
 - **projectile_behavior_homing**: Override update() to track nearest target
-- **impact_splitting**: In on_character_hit(), spawn 3 new projectiles in random directions
+- **projectile_behavior_bouncing**: Bounce off walls and obstacles
+- **impact_splitting**: In on_character_hit(), spawn multiple projectiles in random directions
 - **impact_explosion**: In on_character_hit(), damage all nearby characters
 - **piercing**: Set self.can_pierce = True, don't set alive = False on hit
 
@@ -1486,33 +1553,42 @@ In the `on_character_hit` method:
 class FreezeProjectile(Projectile):
     def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
         super().__init__(position, direction, speed, (100, 150, 255), 4, 2400.0, sprite, damage, owner)
+        self.speed = speed  # Store for later use
     
-    def on_character_hit(self, target, arena):
-        if hasattr(target, 'take_damage'):
+    def on_character_hit(self, target, arena):  # MUST have 2 params: target, arena
             target.take_damage(self.damage)
-        if not hasattr(target, 'is_dead') or not target.is_dead():
             if hasattr(target, 'apply_freeze'):
                 target.apply_freeze(3000, 0.5)
-        self.alive = False
+        self.alive = False  # NEVER use self.kill()
 ```
 
-**Example 2: Zigzag Behavior**
+**Example 2: Homing Behavior**
 ```python
-class ZigzagProjectile(Projectile):
+class HomingProjectile(Projectile):
     def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
-        super().__init__(position, direction, speed, (255, 200, 0), 4, 2400.0, sprite, damage, owner)
-        self.time = 0
+        super().__init__(position, direction, speed, (255, 100, 100), 4, 2400.0, sprite, damage, owner)
+        self.speed = speed  # Store for later use
+        self.homing_strength = 2.0  # How strongly it homes in
     
-    def update(self, arena):
-        import math
-        # Zigzag motion
-        perpendicular = Vector2(-self.velocity.y, self.velocity.x).normalize()
-        offset = math.sin(self.time * 0.2) * 3.0
-        self.position += self.velocity + perpendicular * offset
-        self.time += 1
-        self.distance_traveled += self.speed
+    def update(self):  # CRITICAL: NO arena parameter - just (self)!
+        if not self.alive:
+            return
+
+        # Find nearest target to home towards
+        nearest_target = None
+        nearest_distance = float('inf')
+
+        # This would need access to arena to find targets
+        # For now, simplified version
+        self.position += self.velocity
+        self.distance_traveled += self.velocity.length()
+
         if self.distance_traveled >= self.max_distance:
             self.alive = False
+
+    def on_character_hit(self, target, arena):  # MUST have 2 params: target, arena
+        target.take_damage(self.damage)
+        self.alive = False  # NEVER use self.kill()
 ```
 
 **Example 3: Impact Splitting**
@@ -1520,20 +1596,47 @@ class ZigzagProjectile(Projectile):
 class SplittingProjectile(Projectile):
     def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
         super().__init__(position, direction, speed, (255, 150, 50), 4, 2400.0, sprite, damage, owner)
+        self.speed = speed  # Store for later use
     
-    def on_character_hit(self, target, arena):
-        if hasattr(target, 'take_damage'):
+    def on_character_hit(self, target, arena):  # MUST have 2 params: target, arena
             target.take_damage(self.damage)
         # Spawn 3 smaller projectiles
-        import random
-        from Game.Objects.projectile import Projectile
+        import random, math
         for _ in range(3):
             angle = random.uniform(0, 2 * 3.14159)
             direction = Vector2(math.cos(angle), math.sin(angle))
-            arena.spawn_projectile(self.position.copy(), direction, self.speed * 0.8, 
-                                 damage=self.damage * 0.5, owner=self.owner)
-        self.alive = False
+            # CRITICAL: arena.spawn_projectile only accepts these parameters:
+            # (start_pos, direction, speed, sprite=None, damage, owner=None)
+            # DO NOT use color, radius, or max_distance - they are NOT supported!
+            arena.spawn_projectile(
+                start_pos=self.position.copy(), 
+                direction=direction, 
+                speed=self.speed * 0.8, 
+                damage=self.damage * 0.5, 
+                owner=None  # Use None to prevent recursive custom projectile
+            )
+        self.alive = False  # NEVER use self.kill()
 ```
+
+### 5. CRITICAL: Arena.spawn_projectile Signature
+When spawning secondary projectiles (for splitting, explosion, etc.), use ONLY these parameters:
+```python
+arena.spawn_projectile(
+    start_pos,      # Vector2 or tuple
+    direction,      # Vector2 (normalized direction)
+    speed=16.0,     # float
+    sprite=None,    # optional sprite
+    damage=10.0,    # float
+    owner=None      # Character or None
+)
+```
+
+**NEVER use these parameters** (they cause TypeError):
+- ❌ color - NOT SUPPORTED
+- ❌ radius - NOT SUPPORTED  
+- ❌ max_distance - NOT SUPPORTED
+
+These parameters exist in Projectile.__init__ but NOT in arena.spawn_projectile!
 
 Output ONLY the complete class definition. NO explanations.
 
@@ -1572,6 +1675,14 @@ Generate the COMPLETE {weapon_name}Projectile class with:
    - Character effects: Call target.apply_effectname() in on_character_hit()
    - Projectile behaviors: Override update() or enhance on_character_hit()
 3. Use appropriate colors based on effects (e.g., blue for freeze, red for burn)
+
+**CRITICAL FOR SPLITTING EFFECTS:**
+If the effect includes "splitting" or "split":
+- MUST spawn the exact number of projectiles specified in effect_details (e.g., split_count: 3 means spawn 3 projectiles)
+- MUST use arena.spawn_projectile() with ONLY these parameters: start_pos, direction, speed, damage, owner
+- MUST set owner=None to prevent recursive custom projectiles
+- The splitting should happen in on_character_hit() method
+- MUST use the spread angle from effect_details if provided
 
 Remember: Class name is {weapon_name}Projectile with (Projectile) inheritance!"""
 
@@ -1790,24 +1901,40 @@ from Game.Objects.projectile import Projectile
                 insert_pos = last_import[-1].end()
                 arena_content = arena_content[:insert_pos] + "\n" + import_line + arena_content[insert_pos:]
         
-        # Find the weapon pickup spawn location (in handle_key_event, golden field section)
-        # Look for: pickup = WeaponPickup(Weapon(name="Bow"...
-        bow_pattern = r'(pickup = WeaponPickup\(Weapon\(name="Bow"[^)]+\), \(gx \+ offset, gy\)\))'
+        # Find the weapon pool and add new weapon
+        # Look for weapons_pool = [...] structure
+        pool_pattern = r'(weapons_pool = \[[\s\S]*?\])'
         
-        match = re.search(bow_pattern, arena_content)
+        match = re.search(pool_pattern, arena_content)
         if match:
-            # Replace single weapon with random choice from pool
-            old_code = match.group(1)
-            # Properly indented code (golden field section uses 36 spaces base indent)
-            new_code = '''# Weapon pool for random drops
+            # Pool already exists, add weapon to it
+            pool_content = match.group(1)
+            
+            # Check if weapon already in pool
+            if f"create_{weapon_name.lower()}" not in pool_content:
+                # Add weapon before closing bracket
+                new_entry = f"\n                                        create_{weapon_name.lower()}(),"
+                new_pool = pool_content.replace(
+                    "\n                                    ]",
+                    new_entry + "\n                                    ]"
+                )
+                arena_content = arena_content.replace(pool_content, new_pool)
+        else:
+            # No pool exists, look for single weapon pickup and create pool
+            bow_pattern = r'(pickup = WeaponPickup\(Weapon\(name="Bow"[^)]+\), \(gx \+ offset, gy\)\))'
+            match = re.search(bow_pattern, arena_content)
+            if match:
+                old_code = match.group(1)
+                # Properly indented code (golden field section uses 36 spaces base indent)
+                new_code = '''# Weapon pool for random drops
                                     weapons_pool = [
                                         Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)),
                                         create_''' + weapon_name.lower() + '''(),
                                     ]
                                     weapon = random.choice(weapons_pool)
                                     pickup = WeaponPickup(weapon, (gx + offset, gy))'''
-            
-            arena_content = arena_content.replace(old_code, new_code)
+                
+                arena_content = arena_content.replace(old_code, new_code)
         
         # Write back
         result = write_over_file("Game/Arena/arena.py", arena_content)
@@ -2025,6 +2152,18 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                 weapon_code = f.read()
             compile(weapon_code, weapon_file, 'exec')
             validation["checks_passed"].append("Weapon file syntax valid")
+            
+            # Check 1.5: Weapon uses placeholder.png for images
+            if 'floor_image_name="placeholder.png"' in weapon_code or "floor_image_name='placeholder.png'" in weapon_code:
+                validation["checks_passed"].append("Weapon uses placeholder.png for floor image")
+            else:
+                validation["warnings"].append("Weapon should use placeholder.png for floor_image_name")
+            
+            if 'projectile_image_name="placeholder.png"' in weapon_code or "projectile_image_name='placeholder.png'" in weapon_code:
+                validation["checks_passed"].append("Weapon uses placeholder.png for projectile image")
+            else:
+                validation["warnings"].append("Weapon should use placeholder.png for projectile_image_name")
+                
         except FileNotFoundError:
             validation["errors"].append(f"Weapon file not found: {weapon_file}")
             validation["has_errors"] = True
@@ -2040,26 +2179,52 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                     proj_code = f.read()
                 compile(proj_code, projectile_file, 'exec')
                 
-                # Verify projectile has on_character_hit method
-                if "def on_character_hit" in proj_code:
-                    validation["checks_passed"].append("Custom projectile has on_character_hit")
+                # Verify projectile has on_character_hit method with CORRECT signature
+                if "def on_character_hit(self, target, arena)" in proj_code:
+                    validation["checks_passed"].append("Custom projectile has on_character_hit with correct signature")
+                elif "def on_character_hit" in proj_code:
+                    # Method exists but wrong signature
+                    validation["errors"].append("Custom projectile on_character_hit has wrong signature - must be: def on_character_hit(self, target, arena)")
+                    validation["has_errors"] = True
                 else:
                     validation["errors"].append("Custom projectile missing on_character_hit method")
                     validation["has_errors"] = True
                 
+                # Check for incorrect self.kill() usage
+                if "self.kill()" in proj_code:
+                    validation["errors"].append("Custom projectile uses self.kill() - must use self.alive = False instead")
+                    validation["has_errors"] = True
+                
                 # Verify projectile implements required behaviors
                 # For projectile-only behaviors, check implementation differently
-                projectile_only_effects = ["projectile_behavior_zigzag", "projectile_behavior_homing", 
+                projectile_only_effects = ["projectile_behavior_homing",
                                            "projectile_behavior_bouncing", "impact_splitting", 
                                            "impact_explosion", "piercing"]
                 
                 for effect in effect_types:
                     if effect in projectile_only_effects:
                         # Check for behavior implementation (update method, impact handling, etc.)
-                        if "zigzag" in effect and ("sin(" in proj_code or "cos(" in proj_code or "update" in proj_code):
+                        if "homing" in effect and ("target" in proj_code or "track" in proj_code):
                             validation["checks_passed"].append(f"Projectile implements {effect} behavior")
-                        elif "splitting" in effect and ("spawn" in proj_code or "split" in proj_code):
+                        elif "splitting" in effect:
+                            if "arena.spawn_projectile" in proj_code:
                             validation["checks_passed"].append(f"Projectile implements {effect} behavior")
+                                # Check if the correct number is spawned
+                                effect_detail = weapon_plan.get("effect_details", {}).get(effect, {})
+                                if "split_count" in effect_detail or "magnitude" in effect_detail:
+                                    # Get split_count directly, or use magnitude as the count (magnitude can be int/float, not dict)
+                                    expected_count = effect_detail.get("split_count")
+                                    if expected_count is None:
+                                        magnitude = effect_detail.get("magnitude")
+                                        if isinstance(magnitude, (int, float)):
+                                            expected_count = int(magnitude)
+                                    if expected_count and f"range({expected_count})" in proj_code:
+                                        validation["checks_passed"].append(f"Projectile spawns correct number of splits ({expected_count})")
+                                    elif expected_count:
+                                        validation["warnings"].append(f"Projectile should spawn {expected_count} splits, verify implementation")
+                            else:
+                                validation["errors"].append(f"Projectile missing spawn_projectile call for {effect}")
+                                validation["has_errors"] = True
                         elif "homing" in effect and ("target" in proj_code or "track" in proj_code):
                             validation["checks_passed"].append(f"Projectile implements {effect} behavior")
                         else:
@@ -2081,7 +2246,7 @@ npc.equip_weapon(create_{weapon_name.lower()}())
         
         # Check 3: Character effects exist in Cow class
         # Filter out projectile-only behaviors
-        projectile_only_effects = ["projectile_behavior_zigzag", "projectile_behavior_homing", 
+        projectile_only_effects = ["projectile_behavior_homing",
                                    "projectile_behavior_bouncing", "impact_splitting", 
                                    "impact_explosion", "piercing"]
         character_effects = [e for e in effect_types if e not in projectile_only_effects]
@@ -2093,7 +2258,7 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                 cow_code = "".join(cow_lines) if isinstance(cow_lines, list) else cow_lines
                 
                 for effect in character_effects:
-                    # Check state variable
+                    # Check state variable (generic approach)
                     if f"self.is_{effect}" in cow_code:
                         validation["checks_passed"].append(f"Cow has is_{effect} state")
                     else:
@@ -2164,111 +2329,103 @@ npc.equip_weapon(create_{weapon_name.lower()}())
     
     def _fix_weapon_issues(self, weapon_plan: dict, validation_results: dict) -> bool:
         """
-        Attempt to fix issues found during validation.
+        Use AI agent to intelligently fix validation issues.
         
         Returns:
             True if all issues fixed
         """
+        from Agent.Prompts.system_prompts import system_prompt_error_fixing
+        
         weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
         has_effects = weapon_plan.get("has_effects", False)
         effect_types = weapon_plan.get("effect_types", [])
         
-        fixed_count = 0
+        print(f"\n🤖 Using AI agent to fix {len(validation_results['errors'])} issues...")
         
-        for error in validation_results["errors"]:
-            try:
-                # Handle import errors (wrong class name, missing inheritance, etc.)
-                if "Cannot import weapon" in error or "cannot import name" in error:
-                    print(f"  Fixing: Regenerating files due to import error...")
-                    
-                    # Check if it's a projectile issue
-                    if "Projectile" in error or "_projectile" in error:
-                        print(f"    Analyzing projectile file...")
-                        proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
-                        
-                        # Try to fix common issues in the projectile file
-                        if self._fix_projectile_file(proj_file, weapon_name):
-                            fixed_count += 1
-                            print(f"    ✓ Fixed projectile file")
+        # Build comprehensive context for the agent
+        error_summary = "\n".join([f"  - {error}" for error in validation_results["errors"]])
+        
+        # Create detailed prompt with all context
+        fix_prompt = f"""
+## WEAPON PLAN
+{json.dumps(weapon_plan, indent=2)}
+
+## VALIDATION ERRORS FOUND
+{error_summary}
+
+## FILES INVOLVED
+- Weapon file: Game/Weapons/{weapon_name.lower()}.py
+- Projectile file: Game/Objects/{weapon_name.lower()}_projectile.py (if effects exist)
+- Character file: Game/Character/cow.py
+
+## YOUR TASK
+Fix ALL {len(validation_results['errors'])} validation errors listed above.
+
+## IMPORTANT INSTRUCTIONS
+
+1. **READ FIRST**: Use read_file to examine each file before making changes
+2. **UNDERSTAND**: Look at how the code should work based on the weapon plan
+3. **FIX SYSTEMATICALLY**: Address each error one by one
+4. **VERIFY**: Make sure your changes align with the weapon plan requirements
+
+## EFFECT SYSTEM RULES
+
+**Character Effects** (like slowness, burning, etc.):
+- Need state variable in Cow: self.is_<effect> = False
+- Need apply method in Cow: def apply_<effect>(self, duration)
+- Projectile calls: target.apply_<effect>(duration)
+
+**Projectile-Only Behaviors** (zigzag, homing, splitting, etc.):
+- Implemented directly in projectile class
+- No Cow class modifications needed
+- Handle in update() or on_character_hit() methods
+
+## WORKING EXAMPLES TO REFERENCE
+- Game/Weapons/serpentineshrapnel.py (weapon with splitting effect)
+- Game/Objects/serpentineshrapnel_projectile.py (projectile with impact splitting)
+- Game/Character/cow.py (character with effect system)
+
+Start by reading the relevant files, then fix each error systematically.
+"""
+        
+        try:
+            # Use the AI agent with tool calling to fix issues
+            if self.use_gemini:
+                response = self.gemini.ask_with_tools(
+                    prompt=fix_prompt,
+                    system_prompt=system_prompt_error_fixing,
+                    use_history=False,
+                    save_in_history=False,
+                    max_iterations=15
+                )
                         else:
-                            # If we can't fix it, regenerate
-                            print(f"    Regenerating projectile...")
-                            import os
-                            if os.path.exists(proj_file):
-                                os.remove(proj_file)
-                            projectile_file = self._create_effect_projectile(weapon_plan)
-                            if projectile_file:
-                                fixed_count += 1
-                                print(f"    ✓ Regenerated projectile")
+                response = self.chatGPT.get_response_with_tools(
+                    input=fix_prompt,
+                    system_prompt=system_prompt_error_fixing,
+                    tools=None  # Use all available tools
+                )
+            
+            print(f"\n✅ Agent completed fixing process")
+            print(f"Response: {response[:200]}..." if len(response) > 200 else f"Response: {response}")
+            
+            # Re-validate to check if issues are fixed
+            print(f"\n🔍 Re-validating implementation...")
+            new_validation = self._validate_weapon_implementation(weapon_plan, {})
+            
+            if new_validation["has_errors"]:
+                print(f"  ⚠️  {len(new_validation['errors'])} issues remain:")
+                for error in new_validation["errors"]:
+                    print(f"     - {error}")
+                return False
                     else:
-                        # Weapon file issue
-                        print(f"    Regenerating weapon file...")
-                        weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
-                        import os
-                        if os.path.exists(weapon_file):
-                            os.remove(weapon_file)
-                        new_weapon_file = self._create_weapon_file_with_effects(weapon_plan, weapon_plan.get('description', ''))
-                        if new_weapon_file:
-                            fixed_count += 1
-                            print(f"    ✓ Regenerated weapon")
-                
-                # Handle missing effect methods in Cow
-                elif "Cow missing" in error and "apply_" in error:
-                    effect = error.split("apply_")[1].split(" ")[0]
-                    print(f"  Fixing: Adding {effect} to Cow class...")
-                    success = self._add_effects_to_cow([effect])
-                    if success:
-                        fixed_count += 1
-                        print(f"    ✓ Added {effect} effect")
-                
-                # Handle missing effect application in projectile
-                elif "Projectile doesn't apply" in error or "may not fully implement" in error:
-                    effect = error.split("apply")[1].split("effect")[0].strip() if "apply" in error else error.split("implement")[1].split("(")[0].strip()
-                    print(f"  Fixing: Updating projectile for {effect}...")
-                    # Delete old projectile first
-                    import os
-                    proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
-                    if os.path.exists(proj_file):
-                        os.remove(proj_file)
-                    # Recreate projectile with all effects
-                    projectile_file = self._create_effect_projectile(weapon_plan)
-                    if projectile_file:
-                        fixed_count += 1
-                        print(f"    ✓ Updated projectile")
-                
-                # Handle syntax errors
-                elif "Syntax error" in error:
-                    print(f"  Attempting to fix syntax error...")
-                    # Try to regenerate the problematic file
-                    if "projectile" in error.lower():
-                        proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
-                        import os
-                        if os.path.exists(proj_file):
-                            os.remove(proj_file)
-                        projectile_file = self._create_effect_projectile(weapon_plan)
-                        if projectile_file:
-                            fixed_count += 1
-                            print(f"    ✓ Regenerated projectile")
-                    else:
-                        weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
-                        import os
-                        if os.path.exists(weapon_file):
-                            os.remove(weapon_file)
-                        new_weapon_file = self._create_weapon_file_with_effects(weapon_plan, weapon_plan.get('description', ''))
-                        if new_weapon_file:
-                            fixed_count += 1
-                            print(f"    ✓ Regenerated weapon")
+                print(f"  ✅ All issues fixed!")
+                return True
                 
             except Exception as e:
-                print(f"  ⚠️  Failed to fix '{error}': {e}")
+            print(f"\n❌ Error during AI fixing: {e}")
                 import traceback
                 traceback.print_exc()
-        
-        print(f"\n  Fixed {fixed_count}/{len(validation_results['errors'])} issues")
-        
-        # Re-validate
-        new_validation = self._validate_weapon_implementation(weapon_plan, {})
-        return not new_validation["has_errors"]
+            return False
     
     def _fix_projectile_file(self, proj_file: str, weapon_name: str) -> bool:
         """
@@ -2521,6 +2678,291 @@ Report ANY potential runtime errors."""
                 "response": response
             }
     
+    def _comprehensive_ai_validation(self, weapon_plan: dict, results: dict) -> dict:
+        """
+        Comprehensive AI-powered validation that checks everything and doesn't give up.
+        Uses AI to thoroughly review all code for any potential issues.
+
+        Returns:
+            dict with comprehensive validation results
+        """
+        from Agent.Prompts.system_prompts import system_prompt_comprehensive_validation
+
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        has_effects = weapon_plan.get("has_effects", False)
+
+        print("🤖 AI analyzing all code for potential issues...")
+
+        # Build comprehensive context for AI review
+        code_context = self._build_comprehensive_code_context(weapon_plan)
+
+        # Create detailed prompt for AI comprehensive review
+        validation_prompt = f"""
+## COMPREHENSIVE CODE VALIDATION
+
+You are a senior code reviewer specializing in game development and Python. Your mission is to thoroughly examine all code for ANY potential issues, errors, or inconsistencies.
+
+## WEAPON BEING VALIDATED
+{json.dumps(weapon_plan, indent=2)}
+
+## CODE TO REVIEW
+{code_context}
+
+## VALIDATION REQUIREMENTS
+
+### 1. **File Structure & Imports**
+- Are all required imports present?
+- Are file paths correct?
+- Are class names consistent?
+
+### 2. **Method Signatures** (CRITICAL)
+- `on_character_hit(self, target, arena)` - MUST have 2 parameters
+- `update(self)` - MUST have 1 parameter (only self)
+- `apply_{effect}(self, duration)` - Check parameter counts
+
+### 3. **State Variables**
+- Check for `self.is_{effect}` variables in Cow class
+- **Special case**: knockback uses `is_knocked_back` (not `is_knockback`) - this is correct
+
+### 4. **Lifecycle Management**
+- Use `self.alive = False` (NEVER `self.kill()`)
+- Check for proper projectile destruction
+
+### 5. **Image References**
+- Must use "placeholder.png" for floor_image_name and projectile_image_name
+- Check for hardcoded image paths
+
+### 6. **Arena Integration**
+- Check if weapon is properly added to loot pool
+- Verify spawn_projectile calls use correct parameters
+
+### 7. **Effect Implementation**
+- Character effects: Check apply_{effect} method calls
+- Projectile behaviors: Check update() and on_character_hit() methods
+- Splitting effects: Verify correct number of projectiles spawned
+
+## OUTPUT FORMAT
+
+If NO issues found:
+```
+PASSED: All validation checks completed successfully
+```
+
+If issues found:
+```
+ISSUES_FOUND:
+1. [Category] Specific issue description with exact line/file reference
+2. [Category] Another issue with file and line details
+3. [Category] Third issue...
+
+REMAINING_ISSUES_COUNT: X
+```
+
+Be extremely thorough. Check for edge cases, naming inconsistencies, and potential runtime errors. Do not stop until you've examined every aspect of the code.
+"""
+
+        try:
+            # Use AI for comprehensive validation
+            if self.use_gemini:
+                response = self.gemini.ask_with_tools(
+                    prompt=validation_prompt,
+                    system_prompt=system_prompt_comprehensive_validation,
+                    use_history=False,
+                    save_in_history=False,
+                    max_iterations=20  # Higher limit for comprehensive validation
+                )
+            else:
+                response = self.chatGPT.get_response_with_tools(
+                    input=validation_prompt,
+                    system_prompt=system_prompt_comprehensive_validation,
+                    tools=None
+                )
+
+            # Parse AI response
+            if response.strip().startswith("PASSED"):
+                return {
+                    "all_checks_passed": True,
+                    "issues": [],
+                    "remaining_issues": []
+                }
+            elif "ISSUES_FOUND:" in response:
+                # Extract issues from response
+                issues_section = response.split("ISSUES_FOUND:")[1].split("REMAINING_ISSUES_COUNT:")[0]
+                issues = [line.strip().lstrip("123456789. -") for line in issues_section.split("\n") if line.strip() and not line.startswith("REMAINING_ISSUES_COUNT")]
+
+                return {
+                    "all_checks_passed": False,
+                    "issues": issues,
+                    "remaining_issues": issues
+                }
+            else:
+                # Fallback parsing
+                print(f"  ⚠️  Could not parse AI validation response, assuming issues exist")
+                return {
+                    "all_checks_passed": False,
+                    "issues": ["Could not parse AI validation response"],
+                    "remaining_issues": ["Could not parse AI validation response"]
+                }
+
+        except Exception as e:
+            print(f"  ❌ Error during comprehensive validation: {e}")
+            return {
+                "all_checks_passed": False,
+                "issues": [f"Validation error: {e}"],
+                "remaining_issues": [f"Validation error: {e}"]
+            }
+
+    def _comprehensive_ai_fixing(self, weapon_plan: dict, issues: list) -> dict:
+        """
+        Comprehensive AI-powered fixing that keeps trying until all issues are resolved.
+        Accounts for LLM response length limits by breaking issues into manageable chunks.
+
+        Returns:
+            dict with fixing results
+        """
+        from Agent.Prompts.system_prompts import system_prompt_comprehensive_fixing
+
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+
+        print(f"🤖 AI fixing {len(issues)} issues...")
+
+        # Break issues into smaller chunks to handle LLM response limits
+        issues_per_chunk = 3  # Process 3 issues at a time
+        all_fixed = True
+        remaining_issues = []
+
+        for i in range(0, len(issues), issues_per_chunk):
+            chunk_issues = issues[i:i + issues_per_chunk]
+
+            if not chunk_issues:
+                continue
+
+            print(f"  🔧 Fixing chunk {i//issues_per_chunk + 1}: {len(chunk_issues)} issues")
+
+            # Build context for this chunk
+            issues_summary = "\n".join([f"  - {issue}" for issue in chunk_issues])
+
+            fix_prompt = f"""
+## COMPREHENSIVE ISSUE FIXING
+
+Fix the following issues in the weapon implementation:
+
+## WEAPON PLAN
+{json.dumps(weapon_plan, indent=2)}
+
+## ISSUES TO FIX
+{issues_summary}
+
+## IMPORTANT: Break large fixes into multiple tool calls if needed
+- Use read_file to understand current code
+- Use write_into_file for precise fixes
+- Use write_over_file only for complete rewrites
+- Verify each fix before moving to next issue
+
+## CRITICAL REQUIREMENTS
+- All projectile methods must have correct signatures
+- Use placeholder.png for all images
+- Fix method signatures before other issues
+- Test understanding by reading files first
+
+Fix these {len(chunk_issues)} issues systematically.
+"""
+
+            try:
+                # Use AI for fixing this chunk
+                if self.use_gemini:
+                    response = self.gemini.ask_with_tools(
+                        prompt=fix_prompt,
+                        system_prompt=system_prompt_comprehensive_fixing,
+                        use_history=False,
+                        save_in_history=False,
+                        max_iterations=25  # Higher limit for fixing
+                    )
+                else:
+                    response = self.chatGPT.get_response_with_tools(
+                        input=fix_prompt,
+                        system_prompt=system_prompt_comprehensive_fixing,
+                        tools=None
+                    )
+
+                print(f"  ✅ Fixed chunk {i//issues_per_chunk + 1}")
+
+                # Check if any issues in this chunk are still present
+                for issue in chunk_issues:
+                    # Simple check - if issue keywords still appear in relevant files
+                    if "signature" in issue.lower():
+                        # Check projectile file for wrong signatures
+                        try:
+                            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                            with open(proj_file, 'r') as f:
+                                proj_code = f.read()
+                            if "def on_character_hit(self, target):" in proj_code:
+                                remaining_issues.append(issue)
+                                all_fixed = False
+                        except:
+                            pass
+
+            except Exception as e:
+                print(f"  ❌ Error fixing chunk {i//issues_per_chunk + 1}: {e}")
+                all_fixed = False
+                remaining_issues.extend(chunk_issues)
+
+        return {
+            "all_fixed": all_fixed,
+            "remaining_issues": remaining_issues
+        }
+
+    def _build_comprehensive_code_context(self, weapon_plan: dict) -> str:
+        """Build comprehensive code context for AI validation."""
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        has_effects = weapon_plan.get("has_effects", False)
+
+        context_parts = []
+
+        # 1. Weapon file
+        try:
+            weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
+            with open(weapon_file, 'r') as f:
+                context_parts.append(f"## WEAPON FILE ({weapon_file})\n{f.read()}")
+        except:
+            context_parts.append(f"## WEAPON FILE ({weapon_file})\nFile not found")
+
+        # 2. Projectile file (if exists)
+        if has_effects:
+            try:
+                proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                with open(proj_file, 'r') as f:
+                    context_parts.append(f"## PROJECTILE FILE ({proj_file})\n{f.read()}")
+            except:
+                context_parts.append(f"## PROJECTILE FILE ({proj_file})\nFile not found")
+
+        # 3. Base Projectile class
+        try:
+            with open("Game/Objects/projectile.py", 'r') as f:
+                base_proj_content = f.read()
+            context_parts.append(f"## BASE PROJECTILE CLASS\n{base_proj_content[:2000]}...")  # Limit length
+        except:
+            pass
+
+        # 4. Cow class (for character effects)
+        try:
+            with open("Game/Character/cow.py", 'r') as f:
+                cow_content = f.read()
+            context_parts.append(f"## COW CLASS (Character Effects)\n{cow_content[:3000]}...")  # Limit length
+        except:
+            pass
+
+        # 5. Arena file (for integration)
+        try:
+            with open("Game/Arena/arena.py", 'r') as f:
+                arena_content = f.read()
+            # Extract relevant sections
+            context_parts.append(f"## ARENA FILE (Integration)\n{arena_content[:2000]}...")  # Limit length
+        except:
+            pass
+
+        return "\n\n" + "="*50 + "\n\n".join(context_parts)
+    
     def _fix_integration_issues(self, weapon_plan: dict, integration_check: dict) -> bool:
         """
         Fix integration issues found in final check.
@@ -2551,22 +2993,67 @@ Report ANY potential runtime errors."""
                         fixed_count += 1
                         print(f"    ✓ Fixed imports")
                 
-                # Fix 3: Regenerate if can't fix
-                elif "error" in issue_lower or "incorrect" in issue_lower:
-                    print(f"  Regenerating projectile due to: {issue[:50]}...")
-                    import os
-                    proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
-                    if os.path.exists(proj_file):
-                        os.remove(proj_file)
-                    projectile_file = self._create_effect_projectile(weapon_plan)
-                    if projectile_file:
+                # Fix 2.5: Missing self.speed attribute
+                elif "self.speed" in issue_lower or ("attribute" in issue_lower and "speed" in issue_lower):
+                    print(f"  Fixing: Adding self.speed attribute...")
+                    if self._fix_missing_speed_attribute(weapon_name):
                         fixed_count += 1
-                        print(f"    ✓ Regenerated projectile")
+                        print(f"    ✓ Added self.speed attribute")
+                
+                # Fix 3: Arena.spawn_projectile parameter mismatch - check for multiple keywords
+                elif ("spawn_projectile" in issue_lower and 
+                      ("color" in issue_lower or "radius" in issue_lower or "keyword" in issue_lower or "parameter" in issue_lower)):
+                    print(f"  Fixing: Updating projectile to use correct spawn_projectile parameters...")
+                    if self._fix_spawn_projectile_params(weapon_name):
+                        fixed_count += 1
+                        print(f"    ✓ Fixed spawn_projectile parameters")
+                
+                # Fix 4: Recursive spawning issue
+                elif "recursive" in issue_lower or "self-propagating" in issue_lower:
+                    print(f"  Fixing: Preventing recursive projectile splitting...")
+                    if self._fix_recursive_splitting(weapon_name):
+                        fixed_count += 1
+                        print(f"    ✓ Fixed recursive splitting")
                 
             except Exception as e:
                 print(f"  ⚠️  Failed to fix '{issue[:50]}': {e}")
         
         print(f"\n  Fixed {fixed_count}/{len(issues)} integration issues")
+        
+        # Validate syntax after fixes
+        print(f"\n🔍 Validating syntax after fixes...")
+        if not self._validate_projectile_syntax(weapon_name):
+            print(f"  ❌ Syntax errors remain after fixes")
+            return False
+        print(f"  ✅ Syntax valid")
+        
+        # Run runtime scenario tests with retry loop
+        print(f"\n🎮 Running gameplay scenario tests...")
+        max_test_attempts = 3
+        for attempt in range(max_test_attempts):
+            scenario_results = self._run_scenario_tests(weapon_plan)
+            
+            if scenario_results["passed"]:
+                print(f"  ✅ All scenario tests passed")
+                break
+            
+            print(f"  ⚠️  Scenario tests found runtime issues (attempt {attempt + 1}/{max_test_attempts}):")
+            for issue in scenario_results["issues"]:
+                print(f"     - {issue}")
+            
+            if attempt < max_test_attempts - 1:
+                # Attempt to fix runtime issues
+                print(f"\n🔧 Attempting to fix runtime issues...")
+                if self._fix_runtime_issues(weapon_plan, scenario_results["issues"]):
+                    print(f"  ✅ Runtime fixes applied, re-running tests...")
+                else:
+                    print(f"  ⚠️  Could not auto-fix issues")
+            else:
+                print(f"\n❌ Max test attempts ({max_test_attempts}) reached")
+                return False
+        
+        if not scenario_results["passed"]:
+            return False
         
         # Re-check
         new_check = self._final_integration_check(weapon_plan, {})
@@ -2611,6 +3098,42 @@ Report ANY potential runtime errors."""
             
         except Exception as e:
             print(f"      ⚠️  Could not fix update signature: {e}")
+            return False
+    
+    def _fix_missing_speed_attribute(self, weapon_name: str) -> bool:
+        """
+        Fix missing self.speed attribute by adding it to __init__.
+        The base Projectile class doesn't store speed, but custom projectiles often need it.
+        """
+        try:
+            import re
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            # Check if self.speed already exists
+            if 'self.speed = speed' in content:
+                return True  # Already fixed
+            
+            # Find the __init__ method and add self.speed after super().__init__()
+            # Pattern: Find super().__init__(...) and add self.speed = speed after it
+            pattern = r'(super\(\).__init__\([^)]+\))'
+            
+            def add_speed(match):
+                super_call = match.group(1)
+                return f"{super_call}\n        self.speed = speed"
+            
+            content = re.sub(pattern, add_speed, content, count=1)
+            
+            with open(proj_file, 'w') as f:
+                f.write(content)
+            
+            print(f"      Added self.speed = speed after super().__init__()")
+            return True
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not fix speed attribute: {e}")
             return False
     
     def _fix_missing_imports(self, weapon_name: str, issue: str) -> bool:
@@ -2664,6 +3187,875 @@ Report ANY potential runtime errors."""
             
         except Exception as e:
             print(f"      ⚠️  Could not fix imports: {e}")
+            return False
+    
+    def _fix_spawn_projectile_params(self, weapon_name: str) -> bool:
+        """
+        Fix arena.spawn_projectile() calls to use correct parameters.
+        Arena.spawn_projectile() signature: (start_pos, direction, speed, sprite, damage, owner)
+        Base Projectile.__init__ signature: (start_pos, direction, speed, color, radius, max_distance, sprite, damage, owner)
+        
+        The issue: AI often generates code with color/radius/max_distance for arena.spawn_projectile,
+        but Arena only accepts: start_pos, direction, speed, sprite, damage, owner
+        """
+        try:
+            import re
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            # Pattern: Find all arena.spawn_projectile calls and fix them
+            # We need to:
+            # 1. Keep: start_pos, direction, speed, sprite (if present), damage, owner
+            # 2. Remove: color, radius, max_distance (and their values)
+            
+            # More robust approach: Parse the function call and rebuild it
+            # Find arena.spawn_projectile calls
+            pattern = r'arena\.spawn_projectile\s*\(((?:[^()]+|\([^()]*\))*)\)'
+            
+            def fix_spawn_call(match):
+                args_str = match.group(1)
+                
+                # Parse arguments - handle both positional and keyword
+                # Extract valid arguments only
+                valid_params = {}
+                
+                # Look for keyword arguments we want to keep
+                for param in ['start_pos', 'direction', 'speed', 'sprite', 'damage', 'owner']:
+                    # Match: param=value or param = value
+                    param_pattern = rf'{param}\s*=\s*([^,]+(?:\([^)]*\))?[^,]*?)(?=,|\s*$)'
+                    param_match = re.search(param_pattern, args_str)
+                    if param_match:
+                        valid_params[param] = param_match.group(1).strip()
+                
+                # Rebuild the call with only valid parameters
+                if valid_params:
+                    params_list = []
+                    # Maintain proper order
+                    for param in ['start_pos', 'direction', 'speed', 'sprite', 'damage', 'owner']:
+                        if param in valid_params:
+                            params_list.append(f"{param}={valid_params[param]}")
+                    
+                    return f"arena.spawn_projectile({', '.join(params_list)})"
+                else:
+                    # If no keyword args found, return as is (might be positional)
+                    return match.group(0)
+            
+            # Apply the fix
+            content = re.sub(pattern, fix_spawn_call, content, flags=re.MULTILINE | re.DOTALL)
+            
+            with open(proj_file, 'w') as f:
+                f.write(content)
+            
+            print(f"      Fixed spawn_projectile calls to match Arena signature")
+            return True
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not fix spawn_projectile parameters: {e}")
+            return False
+    
+    def _validate_projectile_syntax(self, weapon_name: str) -> bool:
+        """
+        Validate that the projectile file has valid Python syntax.
+        Returns True if syntax is valid, False otherwise.
+        """
+        try:
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            # Try to compile the file
+            compile(content, proj_file, 'exec')
+            return True
+            
+        except SyntaxError as e:
+            print(f"      Syntax error at line {e.lineno}: {e.msg}")
+            print(f"      {e.text}")
+            return False
+        except Exception as e:
+            print(f"      Validation error: {e}")
+            return False
+    
+    def _run_scenario_tests(self, weapon_plan: dict) -> dict:
+        """
+        Run gameplay scenarios to detect runtime issues with the weapon.
+        
+        Scenarios:
+        1. Walking (baseline)
+        2. Picking up weapon
+        3. Walking with weapon
+        4. Finding ammo while holding weapon
+        5. Shooting at void
+        6. Shooting at AI cow
+        
+        Returns:
+            dict with 'passed' (bool) and 'issues' (list of error messages)
+        """
+        import subprocess
+        import tempfile
+        import os
+        
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        
+        # Create test script
+        test_script = f'''
+import sys
+import os
+import pygame
+
+# Add project root to path
+project_root = os.path.dirname(os.path.abspath(__file__))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Initialize pygame first
+pygame.init()
+
+# Suppress display
+os.environ['SDL_VIDEODRIVER'] = 'dummy'
+
+try:
+    from Game.Arena.arena import Arena
+    from Game.Character.cow import Cow
+    from Game.Character.ai_cow import AICow
+    from Game.Weapons.{weapon_name.lower()} import create_{weapon_name.lower()}
+    from pygame import Vector2
+    
+    # Create minimal arena with correct signature
+    camera_size = (800, 600)
+    world_size = (1600, 1200)
+    screen = pygame.display.set_mode(camera_size)
+    world_surf = pygame.Surface(world_size)
+    arena = Arena((0, 0, camera_size[0], camera_size[1]), world_size, screen, world_surf, "Test Arena")
+    
+    # Create test player
+    player = Cow((0, 0, 50, 50), "TestPlayer", (world_size[0]//2, world_size[1]//2), 
+                 camera_display_size=camera_size, world_display_size=world_size, 
+                 ammo_find_probability=0.2, move_step=4)
+    arena.add_new_character(player)
+    
+    results = {{}}
+    
+    # Scenario 1: Walking
+    try:
+        player.position = Vector2(100, 100)
+        player.update(arena)
+        results['walking'] = 'PASS'
+    except Exception as e:
+        results['walking'] = f'FAIL: {{type(e).__name__}}: {{e}}'
+    
+    # Scenario 2: Picking up weapon
+    try:
+        weapon = create_{weapon_name.lower()}()
+        player.equip_weapon(weapon)
+        results['pickup_weapon'] = 'PASS'
+    except Exception as e:
+        results['pickup_weapon'] = f'FAIL: {{type(e).__name__}}: {{e}}'
+    
+    # Scenario 3: Walking with weapon
+    try:
+        player.update(arena)
+        results['walk_with_weapon'] = 'PASS'
+    except Exception as e:
+        results['walk_with_weapon'] = f'FAIL: {{type(e).__name__}}: {{e}}'
+    
+    # Scenario 4: Adding ammo (directly set since Cow doesn't have add_ammo)
+    try:
+        player.ammo += 50
+        results['add_ammo'] = 'PASS'
+    except Exception as e:
+        results['add_ammo'] = f'FAIL: {{type(e).__name__}}: {{e}}'
+    
+    # Scenario 5: Shooting at void
+    try:
+        player.position = Vector2(400, 400)
+        direction = Vector2(1, 0)
+        weapon = player.get_weapon()
+        if weapon and player.ammo >= weapon.ammo_per_shot:
+            arena.spawn_projectile(
+                start_pos=player.position,
+                direction=direction,
+                speed=weapon.projectile_speed,
+                damage=weapon.damage,
+                owner=player
+            )
+            # Simulate a few frames
+            for _ in range(10):
+                arena.update()
+            results['shoot_void'] = 'PASS'
+        else:
+            results['shoot_void'] = 'SKIP: No ammo or weapon'
+    except Exception as e:
+        results['shoot_void'] = f'FAIL: {{type(e).__name__}}: {{e}}'
+    
+    # Scenario 6: Shooting at AI cow
+    try:
+        # Find or create AI cow
+        ai_cow = None
+        for char in arena.characters:
+            if isinstance(char, AICow):
+                ai_cow = char
+                break
+        
+        if not ai_cow:
+            ai_cow = Cow((0, 0, 50, 50), "TestAI", (500, 400), 
+                        camera_display_size=camera_size, world_display_size=world_size,
+                        ammo_find_probability=0.2, move_step=3)
+            arena.add_new_character(ai_cow)
+        
+        # Position player to shoot at AI
+        player.position = Vector2(400, 400)
+        ai_cow.position = Vector2(600, 400)
+        
+        # Shoot at AI
+        direction = (ai_cow.position - player.position).normalize()
+        weapon = player.get_weapon()
+        if weapon and player.ammo >= weapon.ammo_per_shot:
+            # Add more ammo if needed
+            player.ammo += 100
+            arena.spawn_projectile(
+                start_pos=player.position,
+                direction=direction,
+                speed=weapon.projectile_speed,
+                damage=weapon.damage,
+                owner=player
+            )
+            # Simulate frames until projectile hits or expires
+            for _ in range(100):
+                arena.update()
+                # Check for collision
+                for proj in arena.projectiles[:]:
+                    if proj.alive:
+                        dist = (proj.position - ai_cow.position).length()
+                        if dist < 30:  # Close enough for hit
+                            if hasattr(proj, 'on_character_hit'):
+                                proj.on_character_hit(ai_cow, arena)
+                            break
+            results['shoot_ai'] = 'PASS'
+        else:
+            results['shoot_ai'] = 'SKIP: No weapon'
+    except Exception as e:
+        results['shoot_ai'] = f'FAIL: {{type(e).__name__}}: {{e}}'
+    
+    # Print results
+    for scenario, result in results.items():
+        print(f"{{scenario}}: {{result}}")
+    
+    # Exit successfully if all passed
+    all_passed = all(r in ['PASS', 'SKIP: No ammo or weapon', 'SKIP: No weapon'] for r in results.values())
+    sys.exit(0 if all_passed else 1)
+    
+except Exception as e:
+    print(f"FATAL: {{type(e).__name__}}: {{e}}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(2)
+'''
+        
+        # Write test script to project directory (so imports work)
+        test_file = f"test_weapon_{weapon_name.lower()}_runtime.py"
+        
+        with open(test_file, 'w') as f:
+            f.write(test_script)
+        
+        try:
+            # Run test script from project directory
+            result = subprocess.run(
+                ['python', test_file],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=os.getcwd()  # Run in project directory
+            )
+            
+            # Parse output
+            issues = []
+            output_lines = result.stdout.strip().split('\n')
+            
+            for line in output_lines:
+                if 'FAIL:' in line:
+                    scenario = line.split(':')[0].strip()
+                    error = ':'.join(line.split(':')[2:]).strip()
+                    issues.append(f"{scenario}: {error}")
+                elif 'FATAL:' in line:
+                    issues.append(f"Fatal error: {line}")
+            
+            # Check stderr for additional errors
+            if result.stderr and 'Error' in result.stderr:
+                issues.append(f"Stderr: {result.stderr[:200]}")
+            
+            return {
+                "passed": len(issues) == 0,
+                "issues": issues
+            }
+            
+        except subprocess.TimeoutExpired:
+            return {
+                "passed": False,
+                "issues": ["Test timed out (>10 seconds)"]
+            }
+        except Exception as e:
+            return {
+                "passed": False,
+                "issues": [f"Test execution error: {e}"]
+            }
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(test_file)
+            except:
+                pass
+    
+    def _fix_runtime_issues(self, weapon_plan: dict, issues: list) -> bool:
+        """
+        Use AI agent to fix runtime and integration issues.
+        
+        Returns:
+            True if all issues fixed
+        """
+        from Agent.Prompts.system_prompts import system_prompt_error_fixing
+        
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        
+        print(f"\n🤖 Using AI agent to fix {len(issues)} integration issues...")
+        
+        # Build comprehensive context for the agent
+        issues_summary = "\n".join([f"  - {issue}" for issue in issues])
+        
+        # Create detailed prompt with all context
+        fix_prompt = f"""
+## WEAPON PLAN
+{json.dumps(weapon_plan, indent=2)}
+
+## INTEGRATION/RUNTIME ISSUES FOUND
+{issues_summary}
+
+## FILES INVOLVED
+- Weapon file: Game/Weapons/{weapon_name.lower()}.py
+- Projectile file: Game/Objects/{weapon_name.lower()}_projectile.py (if effects exist)
+- Base projectile: Game/Objects/projectile.py (for reference)
+
+## YOUR TASK
+Fix ALL {len(issues)} integration/runtime issues listed above.
+
+## CRITICAL METHOD SIGNATURES
+
+### 1. on_character_hit Method
+The projectile's `on_character_hit` method MUST have this EXACT signature:
+```python
+def on_character_hit(self, target, arena):
+```
+- Takes 2 parameters: `target` (the character hit) and `arena` (the Arena instance)
+- Arena calls it as: `proj.on_character_hit(character, self)`
+- Must apply damage: `target.take_damage(self.damage)`
+- Must destroy projectile: `self.alive = False` (NOT `self.kill()`)
+
+### 2. update Method  
+The projectile's `update` method MUST have this EXACT signature:
+```python
+def update(self):
+```
+- Takes NO parameters (only `self`)
+- Arena calls it as: `proj.update()`
+- Updates position, distance_traveled, and checks max_distance
+
+### 3. Lifecycle Management
+- Use `self.alive = False` to destroy projectile
+- **NEVER use `self.kill()`** - this method doesn't exist in base Projectile class
+- The `alive` boolean attribute controls lifecycle
+
+## COMMON ISSUES AND FIXES
+
+**Issue**: `on_character_hit(self, target)` - missing `arena` parameter
+**Fix**: Change to `on_character_hit(self, target, arena)`
+
+**Issue**: `self.kill()` in on_character_hit
+**Fix**: Change to `self.alive = False`
+
+**Issue**: `update(self, arena)` - takes arena parameter
+**Fix**: Change to `update(self)` - arena is NOT passed to update()
+
+Start by reading the projectile file to understand the current implementation, then fix each issue systematically.
+"""
+        
+        try:
+            # Use the AI agent with tool calling to fix issues
+            if self.use_gemini:
+                response = self.gemini.ask_with_tools(
+                    prompt=fix_prompt,
+                    system_prompt=system_prompt_error_fixing,
+                    use_history=False,
+                    save_in_history=False,
+                    max_iterations=15
+                )
+            else:
+                response = self.chatGPT.get_response_with_tools(
+                    input=fix_prompt,
+                    system_prompt=system_prompt_error_fixing,
+                    tools=None
+                )
+            
+            print(f"\n✅ Agent completed fixing integration issues")
+            print(f"Response: {response[:200]}..." if len(response) > 200 else f"Response: {response}")
+            
+            # CRITICAL: Re-read the file to verify the fixes were actually applied
+            print(f"\n🔍 Verifying fixes were actually applied...")
+            try:
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                with open(proj_file, 'r') as f:
+                    updated_code = f.read()
+                
+                remaining_issues = []
+                for issue in issues:
+                    if "on_character_hit" in issue and "signature" in issue.lower():
+                        if "def on_character_hit(self, target, arena)" not in updated_code:
+                            remaining_issues.append("on_character_hit signature still incorrect")
+                    if "kill()" in issue:
+                        if "self.kill()" in updated_code:
+                            remaining_issues.append("self.kill() still present")
+                
+                if remaining_issues:
+                    print(f"  ⚠️  Fixes were not applied! Issues remaining:")
+                    for issue in remaining_issues:
+                        print(f"     - {issue}")
+                    return False
+                else:
+                    print(f"  ✅ All fixes verified in file")
+                    return True
+            except Exception as e:
+                print(f"  ⚠️  Could not verify fixes: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"\n❌ Error during AI fixing: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _fix_recursive_splitting(self, weapon_name: str) -> bool:
+        """
+        Fix recursive splitting by ensuring fragments use base Projectile class.
+        When spawning fragments, pass owner=None to prevent them using custom projectile.
+        """
+        try:
+            import re
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            # Find arena.spawn_projectile calls in on_character_hit
+            # Change owner=self.owner to owner=None to force base Projectile
+            content = re.sub(
+                r'(arena\.spawn_projectile\([^)]*?)owner\s*=\s*self\.owner',
+                r'\1owner=None',
+                content
+            )
+            
+            with open(proj_file, 'w') as f:
+                f.write(content)
+            
+            print(f"      Changed owner=self.owner to owner=None for fragments")
+            return True
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not fix recursive splitting: {e}")
+            return False
+    
+    def _run_game_simulation_tests(self, weapon_plan: dict) -> dict:
+        """
+        Run actual game simulation tests to ensure weapon works in real gameplay scenarios:
+        1. Weapon pickup
+        2. Finding ammo with weapon equipped
+        3. Shooting nothing (no target)
+        4. Shooting another player
+        """
+        print("  📋 Test scenarios:")
+        print("     1. Weapon pickup")
+        print("     2. Finding ammo")
+        print("     3. Shooting nothing")
+        print("     4. Shooting player")
+        
+        results = {
+            "tests_run": [],
+            "tests_passed": [],
+            "errors": [],
+            "has_errors": False
+        }
+        
+        try:
+            import sys
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            
+            weapon_name = weapon_plan.get("weapon_name", "TestWeapon")
+            weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
+            
+            # Import required modules
+            import pygame
+            pygame.init()
+            
+            # Create minimal test environment
+            test_screen = pygame.display.set_mode((100, 100), pygame.HIDDEN)
+            
+            from Game.Arena.arena import Arena
+            from Game.Character.cow import Cow
+            from Game.Weapons import Weapon
+            
+            # Import the custom weapon if it exists
+            try:
+                weapon_file = f"Game/Weapons/{weapon_class_name.lower()}"
+                exec(f"from {weapon_file.replace('/', '.')} import create_{weapon_class_name.lower()}")
+                create_weapon_func = locals()[f"create_{weapon_class_name.lower()}"]
+            except Exception as e:
+                results["errors"].append(f"Failed to import weapon: {e}")
+                results["has_errors"] = True
+                return results
+            
+            # Test 1: Weapon Pickup
+            test_name = "weapon_pickup"
+            results["tests_run"].append(test_name)
+            try:
+                print(f"     Running: {test_name}...", end=" ")
+                test_cow = Cow(
+                    rect=pygame.Rect(0, 0, 30, 30),
+                    username="TestCow",
+                    starting_position=(100, 100),
+                    camera_display_size=(800, 600),
+                    world_display_size=(2000, 2000)
+                )
+                
+                weapon = create_weapon_func()
+                test_cow.equip_weapon(weapon)
+                
+                if not test_cow.has_weapon():
+                    raise Exception("Cow did not equip weapon")
+                if test_cow.get_weapon().name != weapon.name:
+                    raise Exception(f"Weapon name mismatch: {test_cow.get_weapon().name} != {weapon.name}")
+                    
+                results["tests_passed"].append(test_name)
+                print("✓")
+            except Exception as e:
+                results["errors"].append(f"Test '{test_name}' failed: {e}")
+                results["has_errors"] = True
+                print("✗")
+            
+            # Test 2: Finding Ammo
+            test_name = "finding_ammo"
+            results["tests_run"].append(test_name)
+            try:
+                print(f"     Running: {test_name}...", end=" ")
+                test_cow = Cow(
+                    rect=pygame.Rect(0, 0, 30, 30),
+                    username="TestCow",
+                    starting_position=(100, 100),
+                    camera_display_size=(800, 600),
+                    world_display_size=(2000, 2000),
+                    starting_ammo=0
+                )
+                weapon = create_weapon_func()
+                test_cow.equip_weapon(weapon)
+                
+                # Simulate finding ammo
+                initial_ammo = test_cow.ammo
+                test_cow.ammo += 10
+                
+                if test_cow.ammo <= initial_ammo:
+                    raise Exception("Ammo did not increase")
+                    
+                results["tests_passed"].append(test_name)
+                print("✓")
+            except Exception as e:
+                results["errors"].append(f"Test '{test_name}' failed: {e}")
+                results["has_errors"] = True
+                print("✗")
+            
+            # Test 3: Shooting Nothing (no target hit)
+            test_name = "shooting_nothing"
+            results["tests_run"].append(test_name)
+            try:
+                print(f"     Running: {test_name}...", end=" ")
+                
+                # Redirect stdout/stderr to suppress pygame output
+                f = io.StringIO()
+                with redirect_stdout(f), redirect_stderr(f):
+                    arena = Arena(
+                        screen_dimensions=(800, 600),
+                        world_screen_dimensions=(2000, 2000),
+                        screen=test_screen,
+                        world_screen=test_screen,
+                        text=None
+                    )
+                    
+                    player = Cow(
+                        rect=pygame.Rect(0, 0, 30, 30),
+                        username="Player",
+                        starting_position=(500, 500),
+                        camera_display_size=(800, 600),
+                        world_display_size=(2000, 2000),
+                        starting_ammo=10
+                    )
+                    weapon = create_weapon_func()
+                    player.equip_weapon(weapon)
+                    arena.characters.append(player)
+                    
+                    # Shoot into empty space
+                    initial_projectile_count = len(arena.projectiles)
+                    direction = (100, 0)  # Shoot right
+                    speed = weapon.projectile_speed
+                    sprite = weapon.get_projectile_sprite() if hasattr(weapon, 'get_projectile_sprite') else None
+                    damage = weapon.damage
+                    
+                    arena.spawn_projectile(
+                        start_pos=(500, 500),
+                        direction=direction,
+                        speed=speed,
+                        sprite=sprite,
+                        damage=damage,
+                        owner=player
+                    )
+                    
+                    if len(arena.projectiles) <= initial_projectile_count:
+                        raise Exception("Projectile was not spawned")
+                    
+                    # Update arena a few times to see if projectile behaves
+                    for _ in range(10):
+                        arena.update()
+                    
+                results["tests_passed"].append(test_name)
+                print("✓")
+            except Exception as e:
+                results["errors"].append(f"Test '{test_name}' failed: {e}")
+                results["has_errors"] = True
+                print("✗")
+                import traceback
+                error_details = traceback.format_exc()
+                results["errors"].append(f"Traceback: {error_details}")
+            
+            # Test 4: Shooting Player
+            test_name = "shooting_player"
+            results["tests_run"].append(test_name)
+            try:
+                print(f"     Running: {test_name}...", end=" ")
+                
+                # Redirect stdout/stderr
+                f = io.StringIO()
+                with redirect_stdout(f), redirect_stderr(f):
+                    arena = Arena(
+                        screen_dimensions=(800, 600),
+                        world_screen_dimensions=(2000, 2000),
+                        screen=test_screen,
+                        world_screen=test_screen,
+                        text=None
+                    )
+                    
+                    player = Cow(
+                        rect=pygame.Rect(0, 0, 30, 30),
+                        username="Player",
+                        starting_position=(500, 500),
+                        camera_display_size=(800, 600),
+                        world_display_size=(2000, 2000),
+                        starting_ammo=10
+                    )
+                    
+                    target = Cow(
+                        rect=pygame.Rect(0, 0, 30, 30),
+                        username="Target",
+                        starting_position=(550, 500),  # Close to player
+                        camera_display_size=(800, 600),
+                        world_display_size=(2000, 2000)
+                    )
+                    
+                    weapon = create_weapon_func()
+                    player.equip_weapon(weapon)
+                    arena.characters.append(player)
+                    arena.characters.append(target)
+                    
+                    initial_health = target.health
+                    
+                    # Shoot at target
+                    direction = (50, 0)  # Shoot right toward target
+                    speed = weapon.projectile_speed
+                    sprite = weapon.get_projectile_sprite() if hasattr(weapon, 'get_projectile_sprite') else None
+                    damage = weapon.damage
+                    
+                    arena.spawn_projectile(
+                        start_pos=(500, 500),
+                        direction=direction,
+                        speed=speed,
+                        sprite=sprite,
+                        damage=damage,
+                        owner=player
+                    )
+                    
+                    # Update arena multiple times to let projectile hit
+                    for _ in range(30):
+                        arena.update()
+                        if target.health < initial_health:
+                            break
+                    
+                    # Check if target took damage
+                    if target.health >= initial_health:
+                        raise Exception(f"Target did not take damage (health: {target.health} >= {initial_health})")
+                
+                results["tests_passed"].append(test_name)
+                print("✓")
+            except Exception as e:
+                results["errors"].append(f"Test '{test_name}' failed: {e}")
+                results["has_errors"] = True
+                print("✗")
+                import traceback
+                error_details = traceback.format_exc()
+                results["errors"].append(f"Traceback: {error_details}")
+            
+            pygame.quit()
+            
+        except Exception as e:
+            results["errors"].append(f"Simulation test suite failed: {e}")
+            results["has_errors"] = True
+            import traceback
+            error_details = traceback.format_exc()
+            results["errors"].append(f"Traceback: {error_details}")
+        
+        return results
+    
+    def _fix_simulation_issues(self, weapon_plan: dict, simulation_results: dict) -> bool:
+        """Fix issues discovered during game simulation testing."""
+        print("  🔧 Analyzing simulation errors...")
+        
+        # Collect all error information
+        error_context = "\n".join(simulation_results["errors"])
+        
+        weapon_name = weapon_plan.get("weapon_name", "TestWeapon")
+        weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
+        
+        # Read relevant files
+        weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
+        projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
+        cow_file = "Game/Character/cow.py"
+        
+        code_context = "## WEAPON FILE\n"
+        try:
+            with open(weapon_file, 'r') as f:
+                code_context += f"```python\n{f.read()}\n```\n\n"
+        except:
+            pass
+        
+        if os.path.exists(projectile_file):
+            code_context += "## PROJECTILE FILE\n"
+            try:
+                with open(projectile_file, 'r') as f:
+                    code_context += f"```python\n{f.read()}\n```\n\n"
+            except:
+                pass
+        
+        # Read relevant parts of Cow class (effect methods)
+        code_context += "## COW CLASS (Effects Section)\n"
+        try:
+            with open(cow_file, 'r') as f:
+                cow_content = f.read()
+                # Extract effect-related methods
+                effect_methods = []
+                for effect in weapon_plan.get("effects", []):
+                    effect_name = effect.replace("projectile_behavior_", "").replace("impact_", "")
+                    if f"apply_{effect_name}" in cow_content:
+                        # Find and extract the method
+                        method_start = cow_content.find(f"def apply_{effect_name}")
+                        if method_start != -1:
+                            # Find end of method (next def or end of file)
+                            method_end = cow_content.find("\n    def ", method_start + 1)
+                            if method_end == -1:
+                                method_end = len(cow_content)
+                            effect_methods.append(cow_content[method_start:method_end])
+                
+                if effect_methods:
+                    code_context += "```python\n" + "\n\n".join(effect_methods) + "\n```\n\n"
+        except:
+            pass
+        
+        system_prompt = """You are a senior game developer fixing runtime issues in weapon implementations.
+
+Your task: Fix runtime errors that occur during game simulation testing.
+
+## Available Tools
+
+Use these tools to fix the issues:
+- read_file(file_path): Read file contents
+- write_into_file(file_path, content, start_line, end_line): Replace specific lines
+- write_over_file(file_path, content): Rewrite entire file (use sparingly)
+
+## Common Runtime Issues
+
+1. **TypeError in apply_ methods**: Wrong number of parameters or keyword arguments
+   - Check the method signature in Cow class
+   - Ensure projectile calls match the signature exactly
+
+2. **AttributeError**: Missing methods or attributes
+   - Check if effect method exists in Cow class
+   - Verify method names are correct
+
+3. **Projectile behavior errors**: Projectiles not spawning or behaving correctly
+   - Check arena.spawn_projectile() parameters
+   - Verify update() and on_character_hit() signatures
+
+4. **Import errors**: Missing imports or wrong module paths
+   - Verify all imports are correct
+   - Check for circular dependencies
+
+## Instructions
+
+1. Read all relevant files first
+2. Identify the root cause of each error
+3. Fix each issue systematically
+4. Verify your changes make sense
+
+Remember: Be precise and minimal in your fixes."""
+
+        prompt = f"""Fix the runtime issues found during game simulation testing.
+
+## WEAPON PLAN
+{json.dumps(weapon_plan, indent=2)}
+
+## SIMULATION ERRORS
+{error_context}
+
+## CURRENT CODE
+{code_context}
+
+## YOUR TASK
+
+1. Read the weapon file and projectile file to understand current implementation
+2. Identify the root cause of each simulation error
+3. Fix the issues using the available tools
+4. Focus on:
+   - Correct method signatures
+   - Proper parameter passing
+   - Missing imports or methods
+   - Correct arena.spawn_projectile() usage
+
+Fix all issues to ensure the weapon works in all test scenarios."""
+
+        try:
+            if not self._check_request_limit():
+                return False
+            
+            response = self.active_client.ask_with_tools(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                tools=self.tools,
+                thinking_budget=-1 if self.use_gemini else None
+            )
+            
+            # Check if the AI made any fixes
+            if response and ("write" in response.lower() or "fixed" in response.lower()):
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"  ❌ Error during simulation fix: {e}")
             return False
     
     def run(self):

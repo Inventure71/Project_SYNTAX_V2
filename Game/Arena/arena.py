@@ -5,7 +5,6 @@ from Game.Objects.grass import GrassField
 from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
-
 from Game.Objects import Projectile
 
 from Game.Objects import WeaponPickup

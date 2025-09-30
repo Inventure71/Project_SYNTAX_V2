@@ -31,6 +31,19 @@ class Cow:
         self.max_health = int(base_health)
         self.health = int(base_health)
         self.stamina = base_stamina
+        # Effect tracking
+        self.is_knocked_back = False
+        self.knockback_end_time = 0
+        self.knockback_velocity_x = 0.0
+        self.knockback_velocity_y = 0.0
+        # Effect tracking
+        self.is_projectile_behavior_spread = False
+        self.projectile_behavior_spread_end_time = 0
+        self.projectile_spread_angle = 0.0
+        # Effect tracking
+        self.is_spread_shot = False
+        self.spread_shot_end_time = 0
+        self.spread_shot_count = 0
         
         # Inventory
         self.ammo = int(starting_ammo)
@@ -158,6 +171,10 @@ class Cow:
     # ----- Update/Render -----
     def update(self, arena=None):
         self.handle_collisions()
+        # Spread shot is a passive modification to the firing mechanism,
+        # so no continuous per-frame updates are required here.
+
+        self._update_effects()
         # Update abilities
         if hasattr(self, 'ability_manager'):
             self.ability_manager.update_all(arena)
@@ -361,6 +378,74 @@ class Cow:
         if hasattr(self, 'ability_manager'):
             self.ability_manager.add_ability(ability_id, ability)
     
+    # ----- Effect Methods -----
+    def apply_spread_shot(self, duration_ms, count):
+        """Apply projectile spread behavior to character attacks."""
+        if self.is_dead():
+            return
+        now = pygame.time.get_ticks()
+        self.is_spread_shot = True
+        self.spread_shot_end_time = now + duration_ms
+        # Minimum spread count is 2 (1 standard + 1 extra)
+        self.spread_shot_count = max(2, count)
+
+    def _update_effects(self):
+        """Update and expire all effects."""
+        now = pygame.time.get_ticks()
+        # Expire spread_shot
+        if self.is_spread_shot and now >= self.spread_shot_end_time:
+            self.is_spread_shot = False
+            self.spread_shot_count = 0
+            # Note: Character firing logic must check self.is_spread_shot and self.spread_shot_count
+            # when generating new projectiles.
+
+    # ----- Effect Methods -----
+    def apply_projectile_behavior_spread(self, duration_ms, spread_angle):
+        """Apply spread projectile behavior to character."""
+        if self.is_dead():
+            return
+        now = pygame.time.get_ticks()
+        self.is_projectile_behavior_spread = True
+        self.projectile_behavior_spread_end_time = now + duration_ms
+        self.projectile_spread_angle = spread_angle
+
+    def _update_effects(self):
+        """Update and expire all effects."""
+        now = pygame.time.get_ticks()
+        # Expire projectile_behavior_spread
+        if self.is_projectile_behavior_spread and now >= self.projectile_behavior_spread_end_time:
+            self.is_projectile_behavior_spread = False
+            self.projectile_spread_angle = 0.0
+            # Note: Character's firing mechanism must check self.is_projectile_behavior_spread
+            # and use self.projectile_spread_angle when firing projectiles.
+
+    # ----- Effect Methods -----
+    def apply_knockback(self, duration_ms, velocity_x, velocity_y):
+        """Apply knockback movement to character."""
+        if self.is_dead():
+            return
+        now = pygame.time.get_ticks()
+
+        self.is_knocked_back = True
+        self.knockback_end_time = now + duration_ms
+        self.knockback_velocity_x = velocity_x
+        self.knockback_velocity_y = velocity_y
+
+    def _update_effects(self):
+        """Update and expire all effects."""
+        now = pygame.time.get_ticks()
+        # Expire knockback
+        if self.is_knocked_back and now >= self.knockback_end_time:
+            self.is_knocked_back = False
+            # Clear the force application vectors
+            self.knockback_velocity_x = 0.0
+            self.knockback_velocity_y = 0.0
+
+    # ----- Effect Methods -----
+    def _update_effects(self):
+        """Update and expire all effects."""
+        now = pygame.time.get_ticks()
+
     def use_ability(self, ability_id: str, arena=None, **kwargs) -> bool:
         """Use an ability by ID."""
         if hasattr(self, 'ability_manager'):
