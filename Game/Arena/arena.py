@@ -46,9 +46,8 @@ class Arena:
     def add_new_character(self, character):
         self.characters.append(character)
 
-    def add_new_object(self, object):
-        self.objects.append(object)
-
+    def add_new_object(self, game_object):
+        self.objects.append(game_object)
     def add_grass_field(self, grass: GrassField):
         self.grass_fields.append(grass)
 
@@ -75,10 +74,10 @@ class Arena:
         
         for character in self.characters:
             if hasattr(character, "update"):
-                character.update(arena=self)
-        for object in self.objects:
-            if hasattr(object, "update"):
-                object.update()
+                character.update()
+        for obj in self.objects:
+            if hasattr(obj, "update"):
+                obj.update()
         for grass in self.grass_fields:
             if hasattr(grass, "update"):
                 grass.update()
@@ -179,8 +178,8 @@ class Arena:
         #pygame.draw.rect(screen, WHITE, self.rect, border_radius=10)
         for character in self.characters:
             character.draw(self.world_screen)
-        for object in self.objects:
-            object.draw(self.world_screen)
+        for obj in self.objects:
+            obj.draw(self.world_screen)
         for proj in self.projectiles:
             proj.draw(self.world_screen)
 
@@ -341,9 +340,8 @@ class Arena:
         # Forward event to children
         for character in self.characters:
             character.handle_event(event)
-        for object in self.objects:
-            object.handle_event(event)
-
+        for obj in self.objects:
+            obj.handle_event(event)
     # ------- Helpers -------
     def _generate_world(self, num_grass: int = 10, num_obstacles: int = 14, num_golden: int = 3):
         # Randomly scatter grass fields and obstacles throughout the world
