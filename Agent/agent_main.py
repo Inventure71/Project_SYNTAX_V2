@@ -25,8 +25,8 @@ class AgentMain:
             self.gemini = GeminiClient()
             self.active_client = self.gemini
         else:
-            self.chatGPT = ChatGPT()
-            self.chatGPT.switch_model("gpt-5-mini", True)
+        self.chatGPT = ChatGPT()
+        self.chatGPT.switch_model("gpt-5-mini", True)
             self.active_client = self.chatGPT
 
         # Project structure
@@ -680,8 +680,13 @@ Is the implementation correct and complete?"""
 
     def create_weapon_workflow(self, weapon_description: str) -> dict:
         """
-        Complete workflow for creating a new weapon.
-        Weapons are simpler than abilities - they define damage, ammo, sprites, and projectile behavior.
+        Complete workflow for creating a new weapon with effects.
+        
+        This workflow:
+        1. Analyzes if weapon needs special effects (freeze, burn, etc.)
+        2. Modifies Cow class to support effects if needed
+        3. Creates weapon file with effect application
+        4. Automatically adds weapon to Arena loot pool
         
         Args:
             weapon_description: Natural language description of the weapon
@@ -696,9 +701,12 @@ Is the implementation correct and complete?"""
         results = {
             "description": weapon_description,
             "weapon_name": None,
+            "has_effects": False,
+            "effect_types": [],
             "success": False,
             "errors": [],
             "backup_id": None,
+            "files_modified": [],
             "files_created": []
         }
         
@@ -708,26 +716,55 @@ Is the implementation correct and complete?"""
             backup_id = self._create_backup("weapon_creation")
             results["backup_id"] = backup_id
             
-            # Step 1: Generate weapon code
-            print("\n📋 Generating weapon...")
-            weapon_code = self._generate_weapon(weapon_description)
-            results["weapon_name"] = weapon_code.get("weapon_name", "CustomWeapon")
+            # Step 1: Analyze weapon and plan implementation
+            print("\n📋 Analyzing weapon requirements...")
+            weapon_plan = self._analyze_weapon_requirements(weapon_description)
+            results["weapon_name"] = weapon_plan.get("weapon_name", "CustomWeapon")
+            results["has_effects"] = weapon_plan.get("has_effects", False)
+            results["effect_types"] = weapon_plan.get("effect_types", [])
             
-            # Step 2: Create weapon file
+            print(f"  Weapon: {results['weapon_name']}")
+            print(f"  Effects needed: {results['effect_types'] if results['has_effects'] else 'None'}")
+            
+            # Step 2: Modify Cow class if effects are needed
+            if results["has_effects"]:
+                print("\n🔧 Modifying Cow class for effects...")
+                cow_modified = self._add_effects_to_cow(results["effect_types"])
+                if cow_modified:
+                    results["files_modified"].append("Game/Character/cow.py")
+                    print("  ✓ Added effect support to Cow class")
+            
+            # Step 3: Create weapon file with effect application
             print("\n🔨 Creating weapon file...")
-            weapon_file = self._create_weapon_file(weapon_code)
+            weapon_file = self._create_weapon_file_with_effects(weapon_plan, weapon_description)
             if weapon_file:
                 results["files_created"].append(weapon_file)
                 print(f"  ✓ Created: {weapon_file}")
             
-            # Step 3: Add weapon to game (create integration example)
-            print("\n🎮 Creating integration example...")
-            integration = self._create_weapon_integration_example(weapon_code)
-            print(f"  ✓ Weapon can be added in main.py or Arena")
-            print(f"  ✓ See: {integration}")
+            # Step 4: Create custom projectile if effects are needed
+            if results["has_effects"]:
+                print("\n✨ Creating effect projectile...")
+                projectile_file = self._create_effect_projectile(weapon_plan)
+                if projectile_file:
+                    results["files_created"].append(projectile_file)
+                    print(f"  ✓ Created: {projectile_file}")
+            
+            # Step 5: Modify Arena to use custom projectiles
+            if results["has_effects"]:
+                print("\n🎯 Updating Arena to use effect projectiles...")
+                arena_proj_modified = self._update_arena_projectile_spawn(weapon_plan)
+                if arena_proj_modified and "Game/Arena/arena.py" not in results["files_modified"]:
+                    results["files_modified"].append("Game/Arena/arena.py")
+                print("  ✓ Arena will use custom projectiles")
+            
+            # Step 6: Add weapon to Arena loot pool
+            print("\n🎮 Adding weapon to game loot pool...")
+            arena_modified = self._add_weapon_to_loot_pool(weapon_plan)
+            if arena_modified and "Game/Arena/arena.py" not in results["files_modified"]:
+                results["files_modified"].append("Game/Arena/arena.py")
+            print("  ✓ Added to golden field loot pool")
             
             results["success"] = True
-            results["integration_example"] = integration
             
         except Exception as e:
             print(f"\n❌ Workflow failed: {e}")
@@ -737,6 +774,566 @@ Is the implementation correct and complete?"""
         
         print("\n" + "="*60)
         return results
+    
+    def _analyze_weapon_requirements(self, weapon_description: str) -> dict:
+        """
+        Analyze weapon description to determine if it needs effects and what kind.
+        
+        Returns:
+            dict with weapon_name, has_effects, effect_types, stats, etc.
+        """
+        from Agent.Tools.read_file import read_file
+        
+        system_prompt = """You are a game weapon analyzer.
+
+Analyze the weapon description and determine:
+1. Does it need special effects? (freeze, burn, slow, stun, poison, etc.)
+2. What effects are needed?
+3. What are the stats? (damage, ammo_per_shot, projectile_speed)
+
+Output as JSON:
+{
+  "weapon_name": "FreezeGun",
+  "display_name": "Freeze Gun",
+  "has_effects": true,
+  "effect_types": ["freeze"],
+  "effect_details": {
+    "freeze": {
+      "duration_ms": 3000,
+      "slow_percent": 0.5,
+      "description": "Slows movement by 50% for 3 seconds"
+    }
+  },
+  "ammo_per_shot": 1,
+  "projectile_speed": 18.0,
+  "damage": 10.0,
+  "description": "Brief description"
+}
+
+Common effects: freeze, burn, slow, stun, poison, knockback, lifesteal"""
+
+        prompt = f"""Analyze this weapon:
+
+**Description**: {weapon_description}
+
+Determine if it needs effects and provide complete configuration."""
+
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
+
+        response = self.active_client.ask(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            thinking_budget=-1 if self.use_gemini else None
+        )
+        
+        # Parse JSON
+        import json
+        try:
+            if "```json" in response:
+                json_start = response.find("```json") + 7
+                json_end = response.find("```", json_start)
+                json_str = response[json_start:json_end].strip()
+                return json.loads(json_str)
+            elif "{" in response:
+                json_start = response.find("{")
+                json_end = response.rfind("}") + 1
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
+        except:
+            pass
+        
+        # Fallback
+        return {
+            "weapon_name": "CustomWeapon",
+            "display_name": "Custom Weapon",
+            "has_effects": False,
+            "effect_types": [],
+            "effect_details": {},
+            "ammo_per_shot": 1,
+            "projectile_speed": 16.0,
+            "damage": 10.0,
+            "description": weapon_description
+        }
+    
+    def _add_effects_to_cow(self, effect_types: list) -> bool:
+        """
+        Modify Cow class to support the specified effects.
+        
+        Args:
+            effect_types: List of effect names like ["freeze", "burn"]
+            
+        Returns:
+            True if successful
+        """
+        from Agent.Tools.read_file import read_file
+        from Agent.Tools.write_to_file import write_over_file
+        
+        # Read current cow.py
+        cow_lines = read_file("Game/Character/cow.py", line_count=False)
+        if isinstance(cow_lines, str):
+            return False
+        
+        cow_content = "".join(cow_lines)
+        
+        # Check if effects already exist
+        effects_to_add = []
+        for effect in effect_types:
+            if f"is_{effect}" not in cow_content:
+                effects_to_add.append(effect)
+        
+        if not effects_to_add:
+            print(f"    Effects already exist in Cow class")
+            return True
+        
+        # Generate effect support code
+        system_prompt = """You are modifying the Cow class to add effect support.
+
+Generate ONLY the code to add to the __init__ method and the effect methods.
+
+Output format:
+```python
+# INIT_ADDITIONS (add to __init__ after health/stamina)
+self.is_frozen = False
+self.freeze_end_time = 0
+
+# METHODS (add after existing methods)
+def apply_freeze(self, duration_ms: int, slow_percent: float = 0.5):
+    ...
+    
+def _update_effects(self):
+    ...
+```
+
+Make it work for ANY character (player or AI)."""
+
+        prompt = f"""Add these effects to Cow class: {effects_to_add}
+
+Current __init__ has: health, stamina, ammo, position, etc.
+
+Generate the code to add effect tracking and application methods."""
+
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
+
+        response = self.active_client.ask(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            thinking_budget=-1 if self.use_gemini else None
+        )
+        
+        # Now modify the actual cow.py file
+        # Find where to insert effect initialization (after stamina)
+        init_insert_marker = "self.stamina = base_stamina"
+        
+        # Extract init additions and methods from response
+        import re
+        
+        # Find INIT_ADDITIONS
+        init_match = re.search(r'# INIT_ADDITIONS.*?\n(.*?)(?=\n# METHODS|$)', response, re.DOTALL)
+        methods_match = re.search(r'# METHODS.*?\n(.*?)(?=```|$)', response, re.DOTALL)
+        
+        if init_match:
+            init_additions = "\n        " + init_match.group(1).strip()
+        else:
+            # Fallback: generate basic effect tracking
+            init_additions = "\n        # Effect tracking\n"
+            for effect in effects_to_add:
+                init_additions += f"        self.is_{effect} = False\n"
+                init_additions += f"        self.{effect}_end_time = 0\n"
+        
+        if methods_match:
+            new_methods = "\n    " + methods_match.group(1).strip() + "\n"
+        else:
+            # Fallback: generate basic methods
+            new_methods = "\n    # ----- Effect Methods -----\n"
+            for effect in effects_to_add:
+                new_methods += f"""    def apply_{effect}(self, duration_ms: int):
+        if self.is_dead():
+            return
+        now = pygame.time.get_ticks()
+        self.is_{effect} = True
+        self.{effect}_end_time = now + duration_ms
+    
+"""
+            new_methods += "    def _update_effects(self):\n"
+            new_methods += "        now = pygame.time.get_ticks()\n"
+            for effect in effects_to_add:
+                new_methods += f"        if self.is_{effect} and now >= self.{effect}_end_time:\n"
+                new_methods += f"            self.is_{effect} = False\n"
+        
+        # Insert init additions
+        modified_content = cow_content.replace(
+            init_insert_marker,
+            init_insert_marker + init_additions
+        )
+        
+        # Add update_effects call to update method if not exists
+        if "_update_effects" in new_methods and "self._update_effects()" not in modified_content:
+            modified_content = modified_content.replace(
+                "def update(self, arena=None):",
+                "def update(self, arena=None):\n        self._update_effects()"
+            )
+        
+        # Add methods before the last method or at end of class
+        # Find the last "    def " and insert before it
+        last_method_match = list(re.finditer(r'\n    def ', modified_content))
+        if last_method_match:
+            insert_pos = last_method_match[-1].start()
+            modified_content = modified_content[:insert_pos] + new_methods + modified_content[insert_pos:]
+        else:
+            # Add at end
+            modified_content += new_methods
+        
+        # Write back
+        result = write_over_file("Game/Character/cow.py", modified_content)
+        return "success" in result
+    
+    def _create_weapon_file_with_effects(self, weapon_plan: dict, description: str) -> str:
+        """Create weapon file that applies effects through projectiles."""
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        file_path = f"Game/Weapons/{weapon_name.lower()}.py"
+        
+        has_effects = weapon_plan.get("has_effects", False)
+        effect_types = weapon_plan.get("effect_types", [])
+        effect_details = weapon_plan.get("effect_details", {})
+        
+        # Generate weapon code
+        if has_effects:
+            # Custom projectile class name
+            projectile_class = f"{weapon_name}Projectile"
+            
+            code = f'''"""
+{weapon_plan.get("display_name", weapon_name)} - Custom Weapon with Effects
+
+{weapon_plan.get("description", description)}
+
+Effects: {", ".join(effect_types)}
+"""
+
+from Game.Weapons.weapon import Weapon
+from Game.Objects.{weapon_name.lower()}_projectile import {projectile_class}
+
+
+def create_{weapon_name.lower()}() -> Weapon:
+    """
+    Factory function to create a {weapon_plan.get("display_name", weapon_name)}.
+    
+    This weapon applies effects: {", ".join(effect_types)}
+    
+    Returns:
+        Configured Weapon instance
+    """
+    weapon = Weapon(
+        name="{weapon_plan.get("display_name", weapon_name)}",
+        ammo_per_shot={weapon_plan.get("ammo_per_shot", 1)},
+        projectile_speed={weapon_plan.get("projectile_speed", 16.0)},
+        damage={weapon_plan.get("damage", 10.0)},
+        floor_image_name=None,
+        floor_image_scale=(28, 28),
+        projectile_image_name=None,
+        projectile_image_scale=(18, 6)
+    )
+    
+    # Store effect info for custom projectile
+    weapon.effect_types = {effect_types}
+    weapon.effect_details = {effect_details}
+    weapon.projectile_class = {projectile_class}
+    
+    return weapon
+
+
+# Quick access instance
+{weapon_name.upper()} = create_{weapon_name.lower()}()
+'''
+        else:
+            # Standard weapon without effects
+            code = f'''"""
+{weapon_plan.get("display_name", weapon_name)} - Custom Weapon
+
+{weapon_plan.get("description", description)}
+"""
+
+from Game.Weapons.weapon import Weapon
+
+
+def create_{weapon_name.lower()}() -> Weapon:
+    """
+    Factory function to create a {weapon_plan.get("display_name", weapon_name)}.
+    
+    Returns:
+        Configured Weapon instance
+    """
+    return Weapon(
+        name="{weapon_plan.get("display_name", weapon_name)}",
+        ammo_per_shot={weapon_plan.get("ammo_per_shot", 1)},
+        projectile_speed={weapon_plan.get("projectile_speed", 16.0)},
+        damage={weapon_plan.get("damage", 10.0)},
+        floor_image_name=None,
+        floor_image_scale=(28, 28),
+        projectile_image_name=None,
+        projectile_image_scale=(18, 6)
+    )
+
+
+# Quick access instance
+{weapon_name.upper()} = create_{weapon_name.lower()}()
+'''
+        
+        # Write file
+        from Agent.Tools.write_to_file import create_file
+        result = create_file(file_path, code)
+        
+        if "success" in result:
+            return file_path
+        else:
+            raise Exception(f"Failed to create weapon file: {result}")
+    
+    def _create_effect_projectile(self, weapon_plan: dict) -> str:
+        """Create custom projectile class that applies effects on hit."""
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        effect_types = weapon_plan.get("effect_types", [])
+        effect_details = weapon_plan.get("effect_details", {})
+        
+        file_path = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+        
+        # Generate effect application code
+        effect_application_code = ""
+        for effect in effect_types:
+            details = effect_details.get(effect, {})
+            duration = details.get("duration_ms", 3000)
+            
+            if effect == "freeze" or effect == "slow":
+                slow_percent = details.get("slow_percent", 0.5)
+                effect_application_code += f"            target.apply_{effect}({duration}, {slow_percent})\n"
+            else:
+                effect_application_code += f"            target.apply_{effect}({duration})\n"
+        
+        code = f'''"""
+Custom Projectile for {weapon_name}
+
+Applies effects: {", ".join(effect_types)}
+"""
+
+import pygame
+from pygame import Vector2
+from Game.Objects.projectile import Projectile
+
+
+class {weapon_name}Projectile(Projectile):
+    """
+    Custom projectile that applies {", ".join(effect_types)} effect(s) on hit.
+    """
+    
+    def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
+        super().__init__(position, direction, speed, damage, sprite, owner)
+        self.effect_types = {effect_types}
+        self.effect_details = {effect_details}
+    
+    def on_character_hit(self, target, arena):
+        """
+        Called when this projectile hits a character.
+        Applies effects in addition to damage.
+        
+        Args:
+            target: The character that was hit
+            arena: The game arena
+        """
+        # Apply damage (standard projectile behavior)
+        if hasattr(target, 'take_damage'):
+            target.take_damage(self.damage)
+        
+        # Apply effects
+        if not hasattr(target, 'is_dead') or not target.is_dead():
+{effect_application_code}
+        
+        # Mark projectile as dead
+        self.alive = False
+'''
+        
+        # Write file
+        from Agent.Tools.write_to_file import create_file
+        result = create_file(file_path, code)
+        
+        if "success" in result:
+            return file_path
+        else:
+            raise Exception(f"Failed to create projectile file: {result}")
+    
+    def _update_arena_projectile_spawn(self, weapon_plan: dict) -> bool:
+        """
+        Modify Arena's projectile spawning to use custom projectiles when weapon has effects.
+        
+        Args:
+            weapon_plan: Weapon configuration
+            
+        Returns:
+            True if successful
+        """
+        from Agent.Tools.read_file import read_file
+        from Agent.Tools.write_to_file import write_over_file
+        import re
+        
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        projectile_class = f"{weapon_name}Projectile"
+        
+        # Read arena.py
+        arena_lines = read_file("Game/Arena/arena.py", line_count=False)
+        if isinstance(arena_lines, str):
+            return False
+        
+        arena_content = "".join(arena_lines)
+        
+        # Add import for custom projectile at top
+        import_line = f"from Game.Objects.{weapon_name.lower()}_projectile import {projectile_class}\n"
+        
+        # Add after projectile imports
+        if "from Game.Objects import Projectile" in arena_content:
+            arena_content = arena_content.replace(
+                "from Game.Objects import Projectile",
+                "from Game.Objects import Projectile\n" + import_line
+            )
+        else:
+            # Find last import
+            last_import = list(re.finditer(r'^from Game\.Objects.*import.*$', arena_content, re.MULTILINE))
+            if last_import:
+                insert_pos = last_import[-1].end()
+                arena_content = arena_content[:insert_pos] + "\n" + import_line + arena_content[insert_pos:]
+        
+        # Now modify the spawn_projectile method to check for custom projectile class
+        # Find the spawn_projectile method
+        spawn_method_pattern = r'def spawn_projectile\(self, start_pos, direction, speed.*?\):(.*?)(?=\n    def |\Z)'
+        
+        match = re.search(spawn_method_pattern, arena_content, re.DOTALL)
+        if match:
+            # Check if already modified
+            if "projectile_class" in match.group(0):
+                print("    spawn_projectile already supports custom projectiles")
+                return True
+            
+            # Replace the method to check for custom projectile class
+            old_method = match.group(0)
+            
+            new_method = '''def spawn_projectile(self, start_pos, direction, speed: float = 16.0, sprite=None, damage: float = 10.0, owner=None):
+        """
+        Spawn a projectile. Checks if owner's weapon has a custom projectile class.
+        
+        Args:
+            start_pos: Starting position
+            direction: Direction vector
+            speed: Projectile speed
+            sprite: Projectile sprite (optional)
+            damage: Damage dealt
+            owner: Character that fired (to check for custom projectile)
+        """
+        # Check if owner has a weapon with custom projectile class
+        projectile_class = None
+        if owner and hasattr(owner, 'get_weapon'):
+            weapon = owner.get_weapon()
+            if weapon and hasattr(weapon, 'projectile_class'):
+                projectile_class = weapon.projectile_class
+        
+        # Use custom projectile if available, otherwise standard
+        if projectile_class:
+            proj = projectile_class(start_pos, direction, speed=speed, damage=damage, sprite=sprite, owner=owner)
+        else:
+            proj = Projectile(start_pos, direction, speed=speed, sprite=sprite, damage=damage, owner=owner)
+        
+        self.projectiles.append(proj)'''
+            
+            arena_content = arena_content.replace(old_method, new_method)
+        
+        # Also need to update projectile collision to call on_character_hit if exists
+        # Find projectile collision section
+        collision_pattern = r'(if prect\.colliderect\(char_rect\):.*?proj\.alive = False.*?break)'
+        
+        matches = list(re.finditer(collision_pattern, arena_content, re.DOTALL))
+        if matches:
+            for match in matches:
+                old_collision = match.group(1)
+                if "on_character_hit" not in old_collision:
+                    new_collision = '''if prect.colliderect(char_rect):
+                        # Use custom hit handler if available
+                        if hasattr(proj, 'on_character_hit'):
+                            proj.on_character_hit(character, self)
+                        else:
+                            # Standard damage
+                            if hasattr(character, 'take_damage'):
+                                character.take_damage(getattr(proj, 'damage', 10.0))
+                            proj.alive = False
+                        break'''
+                    
+                    arena_content = arena_content.replace(old_collision, new_collision, 1)
+        
+        # Write back
+        result = write_over_file("Game/Arena/arena.py", arena_content)
+        return "success" in result
+    
+    def _add_weapon_to_loot_pool(self, weapon_plan: dict) -> bool:
+        """
+        Modify Arena to add weapon to golden field loot pool.
+        
+        Args:
+            weapon_plan: Weapon configuration
+            
+        Returns:
+            True if successful
+        """
+        from Agent.Tools.read_file import read_file
+        from Agent.Tools.write_to_file import write_over_file
+        import re
+        
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        
+        # Read arena.py
+        arena_lines = read_file("Game/Arena/arena.py", line_count=False)
+        if isinstance(arena_lines, str):
+            return False
+        
+        arena_content = "".join(arena_lines)
+        
+        # Check if already added
+        if f"create_{weapon_name.lower()}" in arena_content:
+            print("    Weapon already in loot pool")
+            return True
+        
+        # Add import at top
+        import_line = f"from Game.Weapons.{weapon_name.lower()} import create_{weapon_name.lower()}\n"
+        
+        # Find import section (after existing weapon imports or after other imports)
+        if "from Game.Weapons import Weapon" in arena_content:
+            arena_content = arena_content.replace(
+                "from Game.Weapons import Weapon",
+                "from Game.Weapons import Weapon\n" + import_line
+            )
+        else:
+            # Add after other imports
+            last_import = list(re.finditer(r'^from Game\..*import.*$', arena_content, re.MULTILINE))
+            if last_import:
+                insert_pos = last_import[-1].end()
+                arena_content = arena_content[:insert_pos] + "\n" + import_line + arena_content[insert_pos:]
+        
+        # Find the weapon pickup spawn location (in handle_key_event, golden field section)
+        # Look for: pickup = WeaponPickup(Weapon(name="Bow"...
+        bow_pattern = r'(pickup = WeaponPickup\(Weapon\(name="Bow"[^)]+\), \(gx \+ offset, gy\)\))'
+        
+        match = re.search(bow_pattern, arena_content)
+        if match:
+            # Replace single weapon with random choice from pool
+            old_code = match.group(1)
+            new_code = f'''# Weapon pool for random drops
+                                    weapons_pool = [
+                                        Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)),
+                                        create_{weapon_name.lower()}(),
+                                    ]
+                                    weapon = random.choice(weapons_pool)
+                                    pickup = WeaponPickup(weapon, (gx + offset, gy))'''
+            
+            arena_content = arena_content.replace(old_code, new_code)
+        
+        # Write back
+        result = write_over_file("Game/Arena/arena.py", arena_content)
+        return "success" in result
     
     def _generate_weapon(self, weapon_description: str) -> dict:
         """Generate weapon configuration from description."""
