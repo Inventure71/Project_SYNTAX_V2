@@ -796,6 +796,27 @@ Is the implementation correct and complete?"""
                 print("  ✓ All validation checks passed!")
                 results["success"] = True
             
+            # Step 8: Final integration check with AI review
+            if results["success"]:
+                print("\n🔬 Final integration check...")
+                integration_check = self._final_integration_check(weapon_plan, results)
+                results["integration_check"] = integration_check
+                
+                if not integration_check["passed"]:
+                    print(f"  ⚠️  Integration issues found:")
+                    for issue in integration_check["issues"]:
+                        print(f"     - {issue}")
+                    
+                    # Try to fix integration issues
+                    print("\n🔧 Fixing integration issues...")
+                    if self._fix_integration_issues(weapon_plan, integration_check):
+                        print("  ✓ Integration issues fixed!")
+                    else:
+                        print("  ⚠️  Some integration issues remain")
+                        results["success"] = False
+                else:
+                    print("  ✓ Integration check passed!")
+            
         except Exception as e:
             print(f"\n❌ Workflow failed: {e}")
             results["errors"].append(str(e))
@@ -1514,7 +1535,12 @@ class SplittingProjectile(Projectile):
         self.alive = False
 ```
 
-Output ONLY the complete class definition. NO explanations."""
+Output ONLY the complete class definition. NO explanations.
+
+**CRITICAL**: 
+- Class MUST be named: {weapon_name}Projectile
+- Class MUST inherit from Projectile: class {weapon_name}Projectile(Projectile):
+- NO extra classes or code outside the class definition"""
 
         # Build effect info string
         effect_info_str = ""
@@ -1524,22 +1550,30 @@ Output ONLY the complete class definition. NO explanations."""
 
         prompt = f"""Create a custom projectile class for weapon: {weapon_name}
 
+**CRITICAL REQUIREMENTS**:
+1. Class name MUST be EXACTLY: {weapon_name}Projectile
+2. Class MUST inherit: class {weapon_name}Projectile(Projectile):
+3. NO extra classes, NO helper functions outside the class
+4. Follow the examples format EXACTLY
+
 **Base Projectile Class:**
 ```python
 {projectile_str}
 ```
 
-**Effects to apply:**{effect_info_str}
+**Effects to implement:**{effect_info_str}
 
 **Effect Details:**
 {effect_details}
 
-Generate the COMPLETE custom projectile class with:
+Generate the COMPLETE {weapon_name}Projectile class with:
 1. Proper super().__init__() call (with color and radius!)
-2. on_character_hit() method that applies all effects correctly
-3. Proper parameter passing for each effect type
+2. Required methods based on effect types:
+   - Character effects: Call target.apply_effectname() in on_character_hit()
+   - Projectile behaviors: Override update() or enhance on_character_hit()
+3. Use appropriate colors based on effects (e.g., blue for freeze, red for burn)
 
-Use appropriate colors based on effects (e.g., blue for freeze, red for burn, etc.)."""
+Remember: Class name is {weapon_name}Projectile with (Projectile) inheritance!"""
 
         if not self._check_request_limit():
             raise Exception("User stopped workflow - request limit reached")
@@ -2143,8 +2177,43 @@ npc.equip_weapon(create_{weapon_name.lower()}())
         
         for error in validation_results["errors"]:
             try:
+                # Handle import errors (wrong class name, missing inheritance, etc.)
+                if "Cannot import weapon" in error or "cannot import name" in error:
+                    print(f"  Fixing: Regenerating files due to import error...")
+                    
+                    # Check if it's a projectile issue
+                    if "Projectile" in error or "_projectile" in error:
+                        print(f"    Analyzing projectile file...")
+                        proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                        
+                        # Try to fix common issues in the projectile file
+                        if self._fix_projectile_file(proj_file, weapon_name):
+                            fixed_count += 1
+                            print(f"    ✓ Fixed projectile file")
+                        else:
+                            # If we can't fix it, regenerate
+                            print(f"    Regenerating projectile...")
+                            import os
+                            if os.path.exists(proj_file):
+                                os.remove(proj_file)
+                            projectile_file = self._create_effect_projectile(weapon_plan)
+                            if projectile_file:
+                                fixed_count += 1
+                                print(f"    ✓ Regenerated projectile")
+                    else:
+                        # Weapon file issue
+                        print(f"    Regenerating weapon file...")
+                        weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
+                        import os
+                        if os.path.exists(weapon_file):
+                            os.remove(weapon_file)
+                        new_weapon_file = self._create_weapon_file_with_effects(weapon_plan, weapon_plan.get('description', ''))
+                        if new_weapon_file:
+                            fixed_count += 1
+                            print(f"    ✓ Regenerated weapon")
+                
                 # Handle missing effect methods in Cow
-                if "Cow missing" in error and "apply_" in error:
+                elif "Cow missing" in error and "apply_" in error:
                     effect = error.split("apply_")[1].split(" ")[0]
                     print(f"  Fixing: Adding {effect} to Cow class...")
                     success = self._add_effects_to_cow([effect])
@@ -2169,16 +2238,433 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                 
                 # Handle syntax errors
                 elif "Syntax error" in error:
-                    print(f"  ⚠️  Cannot auto-fix syntax error: {error}")
+                    print(f"  Attempting to fix syntax error...")
+                    # Try to regenerate the problematic file
+                    if "projectile" in error.lower():
+                        proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                        import os
+                        if os.path.exists(proj_file):
+                            os.remove(proj_file)
+                        projectile_file = self._create_effect_projectile(weapon_plan)
+                        if projectile_file:
+                            fixed_count += 1
+                            print(f"    ✓ Regenerated projectile")
+                    else:
+                        weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
+                        import os
+                        if os.path.exists(weapon_file):
+                            os.remove(weapon_file)
+                        new_weapon_file = self._create_weapon_file_with_effects(weapon_plan, weapon_plan.get('description', ''))
+                        if new_weapon_file:
+                            fixed_count += 1
+                            print(f"    ✓ Regenerated weapon")
                 
             except Exception as e:
                 print(f"  ⚠️  Failed to fix '{error}': {e}")
+                import traceback
+                traceback.print_exc()
         
         print(f"\n  Fixed {fixed_count}/{len(validation_results['errors'])} issues")
         
         # Re-validate
         new_validation = self._validate_weapon_implementation(weapon_plan, {})
         return not new_validation["has_errors"]
+    
+    def _fix_projectile_file(self, proj_file: str, weapon_name: str) -> bool:
+        """
+        Try to fix common issues in a projectile file.
+        
+        Returns:
+            True if fixed successfully
+        """
+        try:
+            import re
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            fixed = False
+            expected_class_name = f"{weapon_name}Projectile"
+            
+            # Fix 1: Wrong class name
+            # Look for class definition that doesn't end with "Projectile"
+            class_pattern = r'class\s+(\w+)(?:\(Projectile\))?:'
+            matches = re.findall(class_pattern, content)
+            
+            for match in matches:
+                if match != expected_class_name and weapon_name in match:
+                    print(f"      Found wrong class name: {match} (expected: {expected_class_name})")
+                    # Replace the class name
+                    content = re.sub(
+                        rf'class\s+{re.escape(match)}(\(Projectile\))?:',
+                        f'class {expected_class_name}(Projectile):',
+                        content
+                    )
+                    fixed = True
+                    print(f"      ✓ Renamed class to {expected_class_name}")
+            
+            # Fix 2: Missing inheritance from Projectile
+            if f'class {expected_class_name}:' in content:
+                print(f"      Found class without Projectile inheritance")
+                content = content.replace(
+                    f'class {expected_class_name}:',
+                    f'class {expected_class_name}(Projectile):'
+                )
+                fixed = True
+                print(f"      ✓ Added Projectile inheritance")
+            
+            # Fix 3: Duplicate imports
+            import_lines = []
+            seen_imports = set()
+            new_lines = []
+            
+            for line in content.split('\n'):
+                if line.strip().startswith('import ') or line.strip().startswith('from '):
+                    if line.strip() not in seen_imports:
+                        seen_imports.add(line.strip())
+                        new_lines.append(line)
+                    else:
+                        fixed = True
+                else:
+                    new_lines.append(line)
+            
+            if fixed:
+                content = '\n'.join(new_lines)
+            
+            # Write back if we made changes
+            if fixed:
+                with open(proj_file, 'w') as f:
+                    f.write(content)
+                
+                # Verify it compiles
+                compile(content, proj_file, 'exec')
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not auto-fix: {e}")
+            return False
+    
+    def _final_integration_check(self, weapon_plan: dict, results: dict) -> dict:
+        """
+        Final comprehensive check using AI to review all code and integration points.
+        
+        Returns:
+            dict with integration check results
+        """
+        from Agent.Tools.read_file import read_file
+        
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        has_effects = weapon_plan.get("has_effects", False)
+        
+        # Collect all relevant code
+        code_to_review = {}
+        
+        # 1. Weapon file
+        try:
+            weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
+            weapon_lines = read_file(weapon_file, line_count=False)
+            code_to_review["weapon"] = "".join(weapon_lines) if isinstance(weapon_lines, list) else weapon_lines
+        except:
+            pass
+        
+        # 2. Custom projectile (if exists)
+        if has_effects:
+            try:
+                proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                proj_lines = read_file(proj_file, line_count=False)
+                code_to_review["projectile"] = "".join(proj_lines) if isinstance(proj_lines, list) else proj_lines
+            except:
+                pass
+        
+        # 3. Base Projectile class (for signature comparison)
+        try:
+            base_proj_lines = read_file("Game/Objects/projectile.py", line_count=False)
+            code_to_review["base_projectile"] = "".join(base_proj_lines[:100]) if isinstance(base_proj_lines, list) else str(base_proj_lines)[:3000]
+        except:
+            pass
+        
+        # 4. Arena integration points
+        try:
+            arena_lines = read_file("Game/Arena/arena.py", line_count=False)
+            arena_code = "".join(arena_lines) if isinstance(arena_lines, list) else arena_lines
+            # Extract relevant sections
+            import re
+            # Find spawn_projectile method
+            spawn_match = re.search(r'def spawn_projectile\(.*?\):(.*?)(?=\n    def |\Z)', arena_code, re.DOTALL)
+            if spawn_match:
+                code_to_review["arena_spawn"] = spawn_match.group(0)
+            # Find update method projectile loop
+            update_match = re.search(r'for proj in self\.projectiles:(.*?)(?=\n        for |\n        # |\Z)', arena_code, re.DOTALL)
+            if update_match:
+                code_to_review["arena_update"] = update_match.group(0)
+        except:
+            pass
+        
+        # Build prompt for AI review
+        system_prompt = """You are a code integration reviewer specialized in game development.
+
+Your task: Review all the code for integration issues, signature mismatches, and runtime errors.
+
+## Critical Checks:
+
+### 1. Method Signature Compatibility
+- Custom projectile methods MUST match base class signatures
+- Common issue: `update(self, arena)` in custom vs `update(self)` in base
+- Arena calls `proj.update()` with NO arguments (except arena sometimes)
+- Check: Does custom update() accept the same parameters as base?
+
+### 2. Arena Integration
+- Arena calls `proj.update()` for each projectile
+- Check: Will custom projectile's update() work with Arena's call?
+- Check: Does arena use custom projectile class correctly?
+
+### 3. Missing Imports
+- Check: Are all required imports present?
+- Check: Is math imported for sin/cos?
+- Check: Is random imported for splitting?
+
+### 4. Attribute Access
+- Check: Does code access attributes that might not exist?
+- Check: Are Vector2 operations correct?
+
+### 5. Method Calls
+- Check: Does on_character_hit() call arena.spawn_projectile() correctly?
+- Check: Are all method parameters passed correctly?
+
+## Output Format:
+If NO issues found:
+```
+PASSED
+```
+
+If issues found:
+```
+ISSUES:
+1. [Category] Specific issue description
+2. [Category] Another issue
+```
+
+Be thorough and check for ANY potential runtime errors."""
+
+        prompt = f"""Review this weapon implementation for integration issues:
+
+**Weapon**: {weapon_plan.get('display_name')}
+**Effects**: {weapon_plan.get('effect_types', [])}
+
+**Generated Code**:
+
+=== Weapon File ===
+```python
+{code_to_review.get('weapon', 'Not found')}
+```
+
+=== Custom Projectile (if any) ===
+```python
+{code_to_review.get('projectile', 'No custom projectile')}
+```
+
+=== Base Projectile Class (for comparison) ===
+```python
+{code_to_review.get('base_projectile', 'Not available')}
+```
+
+=== Arena Integration Points ===
+Arena spawn_projectile:
+```python
+{code_to_review.get('arena_spawn', 'Not found')}
+```
+
+Arena update loop:
+```python
+{code_to_review.get('arena_update', 'Not found')}
+```
+
+Check for:
+1. Method signature mismatches (especially update())
+2. Missing imports
+3. Incorrect parameter passing
+4. Attribute errors
+5. Integration issues with Arena
+
+Report ANY potential runtime errors."""
+
+        if not self._check_request_limit():
+            return {"passed": True, "issues": ["Request limit reached, skipping final check"]}
+
+        response = self.active_client.ask(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            thinking_budget=-1 if self.use_gemini else None
+        )
+        
+        # Parse response
+        if "PASSED" in response.upper() and "ISSUES:" not in response:
+            return {"passed": True, "issues": [], "response": response}
+        else:
+            # Extract issues
+            issues = []
+            if "ISSUES:" in response:
+                issues_text = response.split("ISSUES:")[1].strip()
+                for line in issues_text.split("\n"):
+                    line = line.strip()
+                    if line and (line[0].isdigit() or line.startswith("-")):
+                        # Remove numbering/bullets
+                        issue = re.sub(r'^\d+\.\s*|\-\s*', '', line)
+                        if issue:
+                            issues.append(issue)
+            
+            return {
+                "passed": False,
+                "issues": issues if issues else ["AI found issues but couldn't parse them"],
+                "response": response
+            }
+    
+    def _fix_integration_issues(self, weapon_plan: dict, integration_check: dict) -> bool:
+        """
+        Fix integration issues found in final check.
+        
+        Returns:
+            True if all issues fixed
+        """
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        issues = integration_check.get("issues", [])
+        
+        fixed_count = 0
+        
+        for issue in issues:
+            try:
+                issue_lower = issue.lower()
+                
+                # Fix 1: Method signature mismatch in update()
+                if "signature" in issue_lower and "update" in issue_lower:
+                    print(f"  Fixing: Method signature mismatch in update()...")
+                    if self._fix_update_signature(weapon_name):
+                        fixed_count += 1
+                        print(f"    ✓ Fixed update() signature")
+                
+                # Fix 2: Missing imports
+                elif "import" in issue_lower or "missing" in issue_lower:
+                    print(f"  Fixing: Missing imports...")
+                    if self._fix_missing_imports(weapon_name, issue):
+                        fixed_count += 1
+                        print(f"    ✓ Fixed imports")
+                
+                # Fix 3: Regenerate if can't fix
+                elif "error" in issue_lower or "incorrect" in issue_lower:
+                    print(f"  Regenerating projectile due to: {issue[:50]}...")
+                    import os
+                    proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                    if os.path.exists(proj_file):
+                        os.remove(proj_file)
+                    projectile_file = self._create_effect_projectile(weapon_plan)
+                    if projectile_file:
+                        fixed_count += 1
+                        print(f"    ✓ Regenerated projectile")
+                
+            except Exception as e:
+                print(f"  ⚠️  Failed to fix '{issue[:50]}': {e}")
+        
+        print(f"\n  Fixed {fixed_count}/{len(issues)} integration issues")
+        
+        # Re-check
+        new_check = self._final_integration_check(weapon_plan, {})
+        return new_check["passed"]
+    
+    def _fix_update_signature(self, weapon_name: str) -> bool:
+        """
+        Fix update() method signature to match base class.
+        Base Projectile.update() doesn't take arena parameter.
+        """
+        try:
+            import re
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            # Check if update() has arena parameter
+            update_pattern = r'def update\(self, arena\):'
+            if re.search(update_pattern, content):
+                print(f"      Found update(self, arena) - should be update(self)")
+                
+                # Replace update(self, arena): with update(self):
+                content = re.sub(
+                    r'def update\(self, arena\):',
+                    'def update(self):',
+                    content
+                )
+                
+                # Also need to handle any arena references inside the method
+                # Arena is only used at the end for timeout, which we can remove
+                # since base class already handles max_distance
+                
+                with open(proj_file, 'w') as f:
+                    f.write(content)
+                
+                # Verify it compiles
+                compile(content, proj_file, 'exec')
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not fix update signature: {e}")
+            return False
+    
+    def _fix_missing_imports(self, weapon_name: str, issue: str) -> bool:
+        """
+        Add missing imports to projectile file.
+        """
+        try:
+            import re
+            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+            
+            with open(proj_file, 'r') as f:
+                content = f.read()
+            
+            imports_to_add = []
+            
+            # Detect what's missing based on issue and code
+            if "math" in issue.lower() or ("sin" in content and "import math" not in content):
+                imports_to_add.append("import math")
+            
+            if "random" in issue.lower() or ("random." in content and "import random" not in content):
+                imports_to_add.append("import random")
+            
+            if "Vector2" in issue.lower() or ("Vector2" in content and "from pygame import Vector2" not in content):
+                imports_to_add.append("from pygame import Vector2")
+            
+            if imports_to_add:
+                # Find the imports section (after docstring, before class)
+                lines = content.split('\n')
+                insert_index = 0
+                for i, line in enumerate(lines):
+                    if line.strip().startswith('import ') or line.strip().startswith('from '):
+                        insert_index = i + 1
+                    elif line.strip().startswith('class '):
+                        break
+                
+                # Insert missing imports
+                for imp in imports_to_add:
+                    if imp not in content:
+                        lines.insert(insert_index, imp)
+                        insert_index += 1
+                        print(f"      Added: {imp}")
+                
+                content = '\n'.join(lines)
+                
+                with open(proj_file, 'w') as f:
+                    f.write(content)
+                
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not fix imports: {e}")
+            return False
     
     def run(self):
         """Main execution loop for the agent."""
