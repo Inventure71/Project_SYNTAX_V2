@@ -25,8 +25,8 @@ class AgentMain:
             self.gemini = GeminiClient()
             self.active_client = self.gemini
         else:
-            self.chatGPT = ChatGPT()
-            self.chatGPT.switch_model("gpt-5-mini", True)
+        self.chatGPT = ChatGPT()
+        self.chatGPT.switch_model("gpt-5-mini", True)
             self.active_client = self.chatGPT
 
         # Project structure
@@ -894,32 +894,52 @@ Generate ONLY the code to add to the __init__ method and the effect methods.
 CRITICAL: Use NO INDENTATION in your output. Write everything flush left (no leading spaces).
 The system will add proper indentation automatically.
 
+IMPORTANT: Effects must be properly integrated into the game loop:
+
+1. Add effect state variables to __init__ (is_knocked_back, knockback_velocity_x, etc.)
+2. Add effect application methods (apply_knockback, apply_stun, etc.)
+3. Add effect application in update() method (apply movement/velocity changes)
+4. Add effect expiration in _update_effects() method
+
 Output format:
 ```python
 # INIT_ADDITIONS
-self.is_frozen = False
-self.freeze_end_time = 0
+self.is_knocked_back = False
+self.knockback_velocity_x = 0.0
+self.knockback_velocity_y = 0.0
+self.knockback_end_time = 0
+
+# UPDATE_MODIFICATIONS (add to existing update method)
+# Apply knockback movement if active
+if self.is_knocked_back:
+    self.position.x += self.knockback_velocity_x
+    self.position.y += self.knockback_velocity_y
 
 # METHODS
-def apply_freeze(self, duration_ms: int, slow_percent: float = 0.5):
-\"\"\"Apply freeze effect to character.\"\"\"
+def apply_knockback(self, vector_x: float, vector_y: float, duration_ms: int = 150):
+\"\"\"Apply knockback effect that moves character.\"\"\"
 if self.is_dead():
-return
+    return
 now = pygame.time.get_ticks()
-self.is_frozen = True
-self.freeze_end_time = now + duration_ms
+self.is_knocked_back = True
+self.knockback_velocity_x = vector_x
+self.knockback_velocity_y = vector_y
+self.knockback_end_time = now + duration_ms
 
 def _update_effects(self):
 \"\"\"Update and expire effects.\"\"\"
 now = pygame.time.get_ticks()
-if self.is_frozen and now >= self.freeze_end_time:
-self.is_frozen = False
+# Handle Knockback expiration
+if self.is_knocked_back and now >= self.knockback_end_time:
+    self.is_knocked_back = False
+    self.knockback_velocity_x = 0.0
+    self.knockback_velocity_y = 0.0
 ```
 
 IMPORTANT:
-1. NO leading spaces/indentation
-2. Calculate time internally (pygame.time.get_ticks())
-3. _update_effects() takes NO parameters except self
+1. Effects need BOTH state management AND active application in update loop
+2. Movement effects (knockback) must modify position in update()
+3. Time-based effects need expiration logic in _update_effects()
 4. Make it work for ANY character (player or AI)"""
 
         prompt = f"""Add these effects to Cow class: {effects_to_add}
@@ -941,14 +961,17 @@ Generate the code to add effect tracking and application methods."""
         # Find where to insert effect initialization (after stamina)
         init_insert_marker = "self.stamina = base_stamina"
         
-        # Extract init additions and methods from response
+        # Extract init additions, update modifications, and methods from response
         import re
         import textwrap
-        
+
         # Find INIT_ADDITIONS
-        init_match = re.search(r'# INIT_ADDITIONS.*?\n(.*?)(?=\n# METHODS|$)', response, re.DOTALL)
+        init_match = re.search(r'# INIT_ADDITIONS.*?\n(.*?)(?=\n# UPDATE_MODIFICATIONS|$)', response, re.DOTALL)
+        # Find UPDATE_MODIFICATIONS
+        update_match = re.search(r'# UPDATE_MODIFICATIONS.*?\n(.*?)(?=\n# METHODS|$)', response, re.DOTALL)
+        # Find METHODS
         methods_match = re.search(r'# METHODS.*?\n(.*?)(?=```|$)', response, re.DOTALL)
-        
+
         if init_match:
             # Clean up indentation
             raw_init = init_match.group(1).strip()
@@ -968,6 +991,20 @@ Generate the code to add effect tracking and application methods."""
             for effect in effects_to_add:
                 init_additions += f"        self.is_{effect} = False\n"
                 init_additions += f"        self.{effect}_end_time = 0\n"
+
+        if update_match:
+            # Clean up update modifications indentation (8 spaces for method body)
+            raw_update = update_match.group(1).strip()
+            update_lines = raw_update.split('\n')
+            fixed_update_lines = []
+            for line in update_lines:
+                if line.strip():
+                    fixed_update_lines.append("        " + line.strip())
+                else:
+                    fixed_update_lines.append("")
+            update_modifications = "\n" + "\n".join(fixed_update_lines) + "\n"
+        else:
+            update_modifications = ""
         
         if methods_match:
             # Clean up method indentation - use autopep8 approach
@@ -1012,16 +1049,37 @@ Generate the code to add effect tracking and application methods."""
         else:
             # Fallback: generate basic methods with proper indentation
             new_methods = "\n    # ----- Effect Methods -----\n"
+            update_modifications = ""
+
             for effect in effects_to_add:
-                new_methods += f"""    def apply_{effect}(self, duration_ms: int):
+                # Special handling for movement effects
+                if effect == "knockback":
+                    # Add knockback-specific variables and methods
+                    init_additions = "\n        # Effect tracking\n        self.is_knocked_back = False\n        self.knockback_velocity_x = 0.0\n        self.knockback_velocity_y = 0.0\n        self.knockback_end_time = 0\n"
+                    update_modifications = "\n        # Apply knockback movement if active\n        if self.is_knocked_back:\n            self.position.x += self.knockback_velocity_x\n            self.position.y += self.knockback_velocity_y\n"
+                    new_methods += """    def apply_knockback(self, vector_x: float, vector_y: float, duration_ms: int = 150):
+        \"\"\"Apply knockback effect that moves character.\"\"\"
+        if self.is_dead():
+            return
+        now = pygame.time.get_ticks()
+        self.is_knocked_back = True
+        self.knockback_velocity_x = vector_x
+        self.knockback_velocity_y = vector_y
+        self.knockback_end_time = now + duration_ms
+
+"""
+                else:
+                    # Standard effect
+                    new_methods += f"""    def apply_{effect}(self, duration_ms: int):
         \"\"\"Apply {effect} effect to this character.\"\"\"
         if self.is_dead():
             return
         now = pygame.time.get_ticks()
         self.is_{effect} = True
         self.{effect}_end_time = now + duration_ms
-    
+
 """
+
             # _update_effects with NO parameters except self
             new_methods += "    def _update_effects(self):\n"
             new_methods += "        \"\"\"Update and expire all effects.\"\"\"\n"
@@ -1038,10 +1096,23 @@ Generate the code to add effect tracking and application methods."""
         
         # Add update_effects call to update method if not exists
         if "_update_effects" in new_methods and "self._update_effects()" not in modified_content:
-            modified_content = modified_content.replace(
-                "def update(self, arena=None):",
-                "def update(self, arena=None):\n        self._update_effects()"
-            )
+            # Find the update method and add _update_effects call
+            update_method_pattern = r'def update\(self, arena=None\):(.*?)def '
+            update_match = re.search(update_method_pattern, modified_content, re.DOTALL)
+            if update_match:
+                update_method_content = update_match.group(1)
+                # Add _update_effects call and update modifications
+                modified_update = update_method_content.replace(
+                    "self.handle_collisions()",
+                    "self.handle_collisions()" + update_modifications + "\n        self._update_effects()"
+                )
+                modified_content = modified_content.replace(update_method_content, modified_update)
+            else:
+                # Fallback: add to beginning of update method
+                modified_content = modified_content.replace(
+                    "def update(self, arena=None):",
+                    "def update(self, arena=None):\n        self._update_effects()" + update_modifications
+                )
         
         # Add methods before the last method or at end of class
         # Find the last "    def " and insert before it

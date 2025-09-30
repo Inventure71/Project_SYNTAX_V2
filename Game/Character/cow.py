@@ -31,11 +31,6 @@ class Cow:
         self.max_health = int(base_health)
         self.health = int(base_health)
         self.stamina = base_stamina
-        # Effect tracking
-        self.is_stunned = False
-        self.stun_end_time = 0
-        self.is_charmed = False
-        self.charm_end_time = 0
         
         # Inventory
         self.ammo = int(starting_ammo)
@@ -162,7 +157,6 @@ class Cow:
 
     # ----- Update/Render -----
     def update(self, arena=None):
-        self._update_effects()
         self.handle_collisions()
         # Update abilities
         if hasattr(self, 'ability_manager'):
@@ -367,47 +361,6 @@ class Cow:
         if hasattr(self, 'ability_manager'):
             self.ability_manager.add_ability(ability_id, ability)
     
-    # ----- Effect Methods -----
-    def apply_stun(self, duration_ms: int, current_time: int):
-        """
-        Applies or extends the stun effect.
-        Stun prevents the character from taking most actions.
-        """
-        new_end_time = current_time + duration_ms
-
-        # Apply or refresh stun if the new duration is longer
-        if not self.is_stunned or new_end_time > self.stun_end_time:
-            self.is_stunned = True
-            self.stun_end_time = new_end_time
-
-    def apply_charm(self, duration_ms: int, current_time: int):
-        """
-        Applies or extends the charm effect.
-        Charm typically forces the character to act friendly or change target priority.
-        """
-        new_end_time = current_time + duration_ms
-
-        # Apply or refresh charm if the new duration is longer
-        if not self.is_charmed or new_end_time > self.charm_end_time:
-            self.is_charmed = True
-            self.charm_end_time = new_end_time
-
-    def _update_effects(self):
-        """
-        Checks all active effects and removes them if their timers have expired.
-        """
-        current_time = pygame.time.get_ticks()
-        
-        # Stun update
-        if self.is_stunned and current_time >= self.stun_end_time:
-            self.is_stunned = False
-            self.stun_end_time = 0
-
-        # Charm update
-        if self.is_charmed and current_time >= self.charm_end_time:
-            self.is_charmed = False
-            self.charm_end_time = 0
-
     def use_ability(self, ability_id: str, arena=None, **kwargs) -> bool:
         """Use an ability by ID."""
         if hasattr(self, 'ability_manager'):

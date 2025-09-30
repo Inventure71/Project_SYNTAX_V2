@@ -5,7 +5,6 @@ from Game.Objects.grass import GrassField
 from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
-from Game.Weapons.rainbowgun import create_rainbowgun
 
 from Game.Objects import Projectile
 
@@ -277,7 +276,6 @@ class Arena:
                                     # Weapon pool for random drops
                                     weapons_pool = [
                                         Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)),
-                                        create_rainbowgun(),
                                     ]
                                     weapon = random.choice(weapons_pool)
                                     pickup = WeaponPickup(weapon, (gx + offset, gy))

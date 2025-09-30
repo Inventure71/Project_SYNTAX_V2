@@ -3,3 +3,7 @@
 /.vscode
 /logs.log
 /Backup
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
