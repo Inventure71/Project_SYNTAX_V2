@@ -6,6 +6,7 @@ from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
 from Game.Objects import Projectile
+
 from Game.Objects import WeaponPickup
 from Game.Objects import Poop
 from Game.layers import LAYER_GROUND
@@ -107,9 +108,14 @@ class Arena:
                         continue
                     char_rect = character.get_world_rect()
                     if prect.colliderect(char_rect):
-                        if hasattr(character, 'take_damage'):
-                            character.take_damage(getattr(proj, 'damage', 10.0))
-                        proj.alive = False
+                        # Use custom hit handler if available
+                        if hasattr(proj, 'on_character_hit'):
+                            proj.on_character_hit(character, self)
+                        else:
+                            # Standard damage
+                            if hasattr(character, 'take_damage'):
+                                character.take_damage(getattr(proj, 'damage', 10.0))
+                            proj.alive = False
                         break
         # prune dead projectiles
         self.projectiles = [p for p in self.projectiles if getattr(p, "alive", True)]
@@ -372,9 +378,31 @@ class Arena:
             self.add_obstacle(Obstacle((x, y, w, h), base_health=health, blocking_mask=mask_choice))
 
     def spawn_projectile(self, start_pos, direction, speed: float = 16.0, sprite=None, damage: float = 10.0, owner=None):
-        proj = Projectile(start_pos, direction, speed=speed, sprite=sprite, damage=damage, owner=owner)
+        """
+        Spawn a projectile. Checks if owner's weapon has a custom projectile class.
+        
+        Args:
+            start_pos: Starting position
+            direction: Direction vector
+            speed: Projectile speed
+            sprite: Projectile sprite (optional)
+            damage: Damage dealt
+            owner: Character that fired (to check for custom projectile)
+        """
+        # Check if owner has a weapon with custom projectile class
+        projectile_class = None
+        if owner and hasattr(owner, 'get_weapon'):
+            weapon = owner.get_weapon()
+            if weapon and hasattr(weapon, 'projectile_class'):
+                projectile_class = weapon.projectile_class
+        
+        # Use custom projectile if available, otherwise standard
+        if projectile_class:
+            proj = projectile_class(start_pos, direction, speed=speed, damage=damage, sprite=sprite, owner=owner)
+        else:
+            proj = Projectile(start_pos, direction, speed=speed, sprite=sprite, damage=damage, owner=owner)
+        
         self.projectiles.append(proj)
-
     def _clamp_character_to_world(self, character):
         if not hasattr(character, "get_world_rect"):
             return

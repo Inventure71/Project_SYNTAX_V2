@@ -891,21 +891,36 @@ Determine if it needs effects and provide complete configuration."""
 
 Generate ONLY the code to add to the __init__ method and the effect methods.
 
+CRITICAL: Use NO INDENTATION in your output. Write everything flush left (no leading spaces).
+The system will add proper indentation automatically.
+
 Output format:
 ```python
-# INIT_ADDITIONS (add to __init__ after health/stamina)
+# INIT_ADDITIONS
 self.is_frozen = False
 self.freeze_end_time = 0
 
-# METHODS (add after existing methods)
+# METHODS
 def apply_freeze(self, duration_ms: int, slow_percent: float = 0.5):
-    ...
-    
+\"\"\"Apply freeze effect to character.\"\"\"
+if self.is_dead():
+return
+now = pygame.time.get_ticks()
+self.is_frozen = True
+self.freeze_end_time = now + duration_ms
+
 def _update_effects(self):
-    ...
+\"\"\"Update and expire effects.\"\"\"
+now = pygame.time.get_ticks()
+if self.is_frozen and now >= self.freeze_end_time:
+self.is_frozen = False
 ```
 
-Make it work for ANY character (player or AI)."""
+IMPORTANT:
+1. NO leading spaces/indentation
+2. Calculate time internally (pygame.time.get_ticks())
+3. _update_effects() takes NO parameters except self
+4. Make it work for ANY character (player or AI)"""
 
         prompt = f"""Add these effects to Cow class: {effects_to_add}
 
@@ -955,29 +970,47 @@ Generate the code to add effect tracking and application methods."""
                 init_additions += f"        self.{effect}_end_time = 0\n"
         
         if methods_match:
-            # Clean up method indentation
+            # Clean up method indentation - use autopep8 approach
             raw_methods = methods_match.group(1).strip()
-            # Use textwrap to fix indentation
             methods_dedented = textwrap.dedent(raw_methods)
-            # Add 4 spaces for class method level
-            methods_lines = methods_dedented.split('\n')
+            
+            # Build properly indented code by tracking block depth
             fixed_methods = []
-            for line in methods_lines:
-                if line.strip():
-                    if line.strip().startswith('def '):
-                        # Method definition - 4 spaces
-                        fixed_methods.append("    " + line.strip())
-                    elif line.strip().startswith('"""') or line.strip().startswith("'''"):
-                        # Docstring - 8 spaces
-                        fixed_methods.append("        " + line.strip())
-                    else:
-                        # Method body - 8 spaces
-                        fixed_methods.append("        " + line.strip())
-                else:
+            depth = 0  # Track nesting depth INSIDE method body
+            
+            for line in methods_dedented.split('\n'):
+                stripped = line.strip()
+                if not stripped:
                     fixed_methods.append("")
+                    continue
+                
+                # Handle dedents for elif/else/except/finally BEFORE calculating indent
+                if stripped.startswith(('elif ', 'else:', 'except', 'finally:')):
+                    depth = max(0, depth - 1)
+                
+                # Calculate indentation
+                if stripped.startswith(('def ', 'class ')):
+                    # Method/class definition: 4 spaces
+                    fixed_methods.append("    " + stripped)
+                    depth = 0  # Reset depth for method body
+                    # Don't increase depth here - method body starts at depth 0
+                    continue  # Skip depth increase logic
+                else:
+                    # Method body: 8 spaces base + 4 per depth level
+                    indent = "        " + ("    " * depth)
+                    fixed_methods.append(indent + stripped)
+                
+                # Increase depth AFTER adding line if it ends with ':'
+                if stripped.endswith(':') and not stripped.startswith('#'):
+                    depth += 1
+                # Decrease depth after single-statement lines (return/break/etc)
+                elif depth > 0 and (stripped in ('return', 'break', 'continue', 'pass') or \
+                     stripped.startswith(('return ', 'break ', 'continue ', 'pass ', 'raise '))):
+                    depth = max(0, depth - 1)
+            
             new_methods = "\n    # ----- Effect Methods -----\n" + "\n".join(fixed_methods) + "\n"
         else:
-            # Fallback: generate basic methods
+            # Fallback: generate basic methods with proper indentation
             new_methods = "\n    # ----- Effect Methods -----\n"
             for effect in effects_to_add:
                 new_methods += f"""    def apply_{effect}(self, duration_ms: int):
@@ -989,8 +1022,9 @@ Generate the code to add effect tracking and application methods."""
         self.{effect}_end_time = now + duration_ms
     
 """
+            # _update_effects with NO parameters except self
             new_methods += "    def _update_effects(self):\n"
-            new_methods += "        \"\"\"Update and expire effects.\"\"\"\n"
+            new_methods += "        \"\"\"Update and expire all effects.\"\"\"\n"
             new_methods += "        now = pygame.time.get_ticks()\n"
             for effect in effects_to_add:
                 new_methods += f"        if self.is_{effect} and now >= self.{effect}_end_time:\n"
