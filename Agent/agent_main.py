@@ -25,8 +25,8 @@ class AgentMain:
             self.gemini = GeminiClient()
             self.active_client = self.gemini
         else:
-        self.chatGPT = ChatGPT()
-        self.chatGPT.switch_model("gpt-5-mini", True)
+            self.chatGPT = ChatGPT()
+            self.chatGPT.switch_model("gpt-5-mini", True)
             self.active_client = self.chatGPT
 
         # Project structure
