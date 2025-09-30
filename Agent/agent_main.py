@@ -2208,7 +2208,7 @@ npc.equip_weapon(create_{weapon_name.lower()}())
                             validation["checks_passed"].append(f"Projectile implements {effect} behavior")
                         elif "splitting" in effect:
                             if "arena.spawn_projectile" in proj_code:
-                            validation["checks_passed"].append(f"Projectile implements {effect} behavior")
+                                validation["checks_passed"].append(f"Projectile implements {effect} behavior")
                                 # Check if the correct number is spawned
                                 effect_detail = weapon_plan.get("effect_details", {}).get(effect, {})
                                 if "split_count" in effect_detail or "magnitude" in effect_detail:
@@ -2398,7 +2398,7 @@ Start by reading the relevant files, then fix each error systematically.
                     save_in_history=False,
                     max_iterations=15
                 )
-                        else:
+            else:
                 response = self.chatGPT.get_response_with_tools(
                     input=fix_prompt,
                     system_prompt=system_prompt_error_fixing,
@@ -2417,15 +2417,16 @@ Start by reading the relevant files, then fix each error systematically.
                 for error in new_validation["errors"]:
                     print(f"     - {error}")
                 return False
-                    else:
+            else:
                 print(f"  ✅ All issues fixed!")
                 return True
                 
-            except Exception as e:
+        except Exception as e:
             print(f"\n❌ Error during AI fixing: {e}")
-                import traceback
-                traceback.print_exc()
-            return False
+            import traceback
+            traceback.print_exc()
+        
+        return False
     
     def _fix_projectile_file(self, proj_file: str, weapon_name: str) -> bool:
         """
@@ -3603,7 +3604,7 @@ Start by reading the projectile file to understand the current implementation, t
             # CRITICAL: Re-read the file to verify the fixes were actually applied
             print(f"\n🔍 Verifying fixes were actually applied...")
             try:
-            proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                proj_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
                 with open(proj_file, 'r') as f:
                     updated_code = f.read()
                 
