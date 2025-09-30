@@ -1,0 +1,225 @@
+"""
+Validation logic for the agent system.
+"""
+import os
+import re
+from typing import Dict, List, Any, Tuple
+
+from .utils import debug_print, safe_read_file, validate_method_signature
+
+
+def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate weapon implementation for common issues.
+    """
+    debug_print("🔍 Starting weapon implementation validation", "INFO")
+
+    validation = {
+        "checks_passed": [],
+        "warnings": [],
+        "errors": [],
+        "has_errors": False
+    }
+
+    try:
+        weapon_name = weapon_plan.get("weapon_name", "UnknownWeapon")
+        weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
+        effects = weapon_plan.get("effects", [])
+
+        debug_print(f"Validating weapon: {weapon_name} with effects: {effects}", "INFO")
+
+        # Check weapon file
+        weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
+        debug_print(f"Checking weapon file: {weapon_file}", "DEBUG")
+
+        if not os.path.exists(weapon_file):
+            validation["errors"].append(f"Weapon file {weapon_file} not found")
+            validation["has_errors"] = True
+            debug_print(f"❌ Weapon file missing: {weapon_file}", "ERROR")
+        else:
+            debug_print(f"✅ Weapon file exists: {weapon_file}", "DEBUG")
+
+        # Check projectile file if effects exist
+        if effects:
+            projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
+            debug_print(f"Checking projectile file: {projectile_file}", "DEBUG")
+
+            if not os.path.exists(projectile_file):
+                validation["errors"].append(f"Projectile file {projectile_file} not found")
+                validation["has_errors"] = True
+                debug_print(f"❌ Projectile file missing: {projectile_file}", "ERROR")
+            else:
+                debug_print(f"✅ Projectile file exists: {projectile_file}", "DEBUG")
+
+        # Validate weapon file content
+        if os.path.exists(weapon_file):
+            weapon_code, success = safe_read_file(weapon_file)
+            if success:
+                debug_print("Reading weapon file content for validation", "DEBUG")
+
+                # Check for create_weapon function
+                if f"def create_{weapon_class_name.lower()}()" not in weapon_code:
+                    validation["errors"].append(f"Weapon file missing create_{weapon_class_name.lower()} function")
+                    validation["has_errors"] = True
+                    debug_print(f"❌ Missing create function in weapon file", "ERROR")
+
+                # Check for placeholder image usage
+                if "placeholder.png" not in weapon_code:
+                    validation["errors"].append("Weapon should use 'placeholder.png' for floor_image_name and projectile_image_name")
+                    validation["has_errors"] = True
+                    debug_print(f"❌ Weapon not using placeholder.png", "ERROR")
+
+        # Validate projectile file content if effects exist
+        if effects and os.path.exists(projectile_file):
+            proj_code, success = safe_read_file(projectile_file)
+            if success:
+                debug_print("Reading projectile file content for validation", "DEBUG")
+
+                # Check for proper class inheritance
+                expected_class = f"class {weapon_class_name}Projectile(Projectile):"
+                if expected_class not in proj_code:
+                    validation["errors"].append(f"Projectile class should be named {weapon_class_name}Projectile")
+                    validation["has_errors"] = True
+                    debug_print(f"❌ Incorrect projectile class name", "ERROR")
+
+                # Check method signatures
+                if "def on_character_hit(self, target, arena):" not in proj_code:
+                    validation["errors"].append("Projectile missing on_character_hit(self, target, arena) method")
+                    validation["has_errors"] = True
+                    debug_print(f"❌ Missing on_character_hit method", "ERROR")
+
+                if "def update(self):" not in proj_code:
+                    validation["errors"].append("Projectile missing update(self) method")
+                    validation["has_errors"] = True
+                    debug_print(f"❌ Missing update method", "ERROR")
+
+                # Check for self.alive = False usage
+                if "self.alive = False" not in proj_code:
+                    validation["warnings"].append("Projectile should use self.alive = False for destruction")
+                    debug_print(f"⚠️  Projectile may not use proper destruction", "WARNING")
+
+                # Check for self.kill() usage (should not exist)
+                if "self.kill()" in proj_code:
+                    validation["errors"].append("Projectile uses self.kill() instead of self.alive = False")
+                    validation["has_errors"] = True
+                    debug_print(f"❌ Projectile incorrectly uses self.kill()", "ERROR")
+
+                # Check effect implementations
+                for effect in effects:
+                    debug_print(f"Checking effect implementation: {effect}", "DEBUG")
+
+                    if effect.startswith("projectile_behavior_") or effect in ["custom_fire_pattern", "homing", "bouncing", "zigzag"]:
+                        # Projectile-only behaviors - NO Cow class methods needed
+                        if "update" not in proj_code.lower():
+                            validation["errors"].append(f"Projectile missing behavior implementation for {effect}")
+                            validation["has_errors"] = True
+                            debug_print(f"❌ Missing behavior implementation for {effect}", "ERROR")
+
+                    elif "splitting" in effect or "split" in effect:
+                        # Check for splitting logic
+                        if "arena.spawn_projectile" not in proj_code:
+                            validation["errors"].append(f"Projectile missing spawn_projectile call for {effect}")
+                            validation["has_errors"] = True
+                            debug_print(f"❌ Missing spawn_projectile for splitting effect", "ERROR")
+
+                    elif "impact_" in effect:
+                        # Character effects - these DO need Cow class methods
+                        if f"apply_{effect.replace('impact_', '')}" not in proj_code:
+                            validation["errors"].append(f"Projectile doesn't apply {effect} effect")
+                            validation["has_errors"] = True
+                            debug_print(f"❌ Missing effect application for {effect}", "ERROR")
+
+        # Check Cow class for effect support - ONLY for impact_ effects (character effects)
+        cow_file = "Game/Character/cow.py"
+        if os.path.exists(cow_file):
+            cow_code, success = safe_read_file(cow_file)
+            if success:
+                debug_print("Checking Cow class for character effect support", "DEBUG")
+
+                for effect in effects:
+                    # ONLY check Cow for impact_ effects (character effects)
+                    # Projectile behaviors like "custom_fire_pattern", "zigzag", etc. are handled in projectile class
+                    if "impact_" in effect:
+                        effect_name = effect.replace("impact_", "")
+                        debug_print(f"Checking Cow class for {effect_name} character effect support", "DEBUG")
+
+                        # Check for state variable
+                        if f"self.is_{effect_name}" not in cow_code:
+                            validation["errors"].append(f"Cow missing is_{effect_name} state variable")
+                            validation["has_errors"] = True
+                            debug_print(f"❌ Cow missing state variable for {effect_name}", "ERROR")
+
+                        # Check for apply method
+                        if f"def apply_{effect_name}" not in cow_code:
+                            validation["errors"].append(f"Cow missing apply_{effect_name} method")
+                            validation["has_errors"] = True
+                            debug_print(f"❌ Cow missing apply method for {effect_name}", "ERROR")
+                    else:
+                        debug_print(f"✓ Skipping Cow check for projectile-only effect: {effect}", "DEBUG")
+
+        debug_print(f"Validation complete: {len(validation['checks_passed'])} checks passed, {len(validation['warnings'])} warnings, {len(validation['errors'])} errors", "INFO")
+
+    except Exception as e:
+        debug_print(f"Error during validation: {e}", "ERROR")
+        validation["errors"].append(f"Validation failed: {e}")
+        validation["has_errors"] = True
+
+    return validation
+
+
+def validate_projectile_behavior(proj_code: str, effect: str) -> Dict[str, Any]:
+    """Validate specific projectile behavior implementations."""
+    debug_print(f"Validating projectile behavior: {effect}", "DEBUG")
+
+    validation = {
+        "implemented": False,
+        "correct": False,
+        "details": []
+    }
+
+    try:
+        if effect == "homing":
+            # Check for homing logic in update method
+            if "nearest_target" in proj_code or "track" in proj_code or "target" in proj_code:
+                validation["implemented"] = True
+                validation["details"].append("Projectile implements homing behavior")
+                debug_print("✅ Homing behavior detected", "DEBUG")
+            else:
+                validation["details"].append("No homing logic found in projectile")
+                debug_print("❌ No homing logic found", "DEBUG")
+
+        elif "splitting" in effect:
+            # Check for splitting logic
+            if "arena.spawn_projectile" in proj_code:
+                validation["implemented"] = True
+                validation["details"].append("Projectile implements splitting behavior")
+
+                # Check for correct number of projectiles
+                if "range(" in proj_code:
+                    validation["correct"] = True
+                    validation["details"].append("Correct number of projectiles spawned")
+                    debug_print("✅ Splitting behavior correctly implemented", "DEBUG")
+                else:
+                    validation["details"].append("May not spawn correct number of projectiles")
+                    debug_print("⚠️  Splitting behavior may be incorrect", "WARNING")
+            else:
+                validation["details"].append("No projectile spawning found")
+                debug_print("❌ No splitting logic found", "DEBUG")
+
+        elif "impact_" in effect:
+            # Character effect application
+            effect_name = effect.replace("impact_", "")
+            if f"apply_{effect_name}" in proj_code:
+                validation["implemented"] = True
+                validation["correct"] = True
+                validation["details"].append(f"Projectile applies {effect_name} effect")
+                debug_print(f"✅ Effect application found for {effect_name}", "DEBUG")
+            else:
+                validation["details"].append(f"No {effect_name} effect application found")
+                debug_print(f"❌ No effect application for {effect_name}", "DEBUG")
+
+    except Exception as e:
+        debug_print(f"Error validating projectile behavior {effect}: {e}", "ERROR")
+        validation["details"].append(f"Validation error: {e}")
+
+    return validation

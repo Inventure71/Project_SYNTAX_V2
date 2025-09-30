@@ -32,21 +32,15 @@ class Cow:
         self.health = int(base_health)
         self.stamina = base_stamina
         # Effect tracking
-        self.is_knocked_back = False
-        self.knockback_end_time = 0
-        self.knockback_velocity_x = 0.0
-        self.knockback_velocity_y = 0.0
-        # Effect tracking
-        self.is_projectile_behavior_spread = False
-        self.projectile_behavior_spread_end_time = 0
-        self.projectile_spread_angle = 0.0
-        # Effect tracking
-        self.is_spread_shot = False
-        self.spread_shot_end_time = 0
-        self.spread_shot_count = 0
-        
-        # Inventory
-        self.ammo = int(starting_ammo)
+        self.is_burst_fire = False
+        self.burst_fire_end_time = 0
+        self.burst_count = 0
+        self.burst_offset_angle = 0.0
+        self.burst_cooldown_ms = 0
+        self._burst_shots_remaining = 0
+        self._burst_ready_time = 0
+
+        # Inventory        self.ammo = int(starting_ammo)
         self.ammo_find_probability = float(ammo_find_probability)
         
         # Movement
@@ -379,40 +373,34 @@ class Cow:
             self.ability_manager.add_ability(ability_id, ability)
     
     # ----- Effect Methods -----
-    def apply_spread_shot(self, duration_ms, count):
-        """Apply projectile spread behavior to character attacks."""
+
+    def apply_burst_fire(self, duration_ms, burst_count: int = 4, offset_angle: float = 90.0, cooldown_ms: int = 200):
+        """Apply a burst fire pattern to character attacks."""
         if self.is_dead():
             return
         now = pygame.time.get_ticks()
-        self.is_spread_shot = True
-        self.spread_shot_end_time = now + duration_ms
-        # Minimum spread count is 2 (1 standard + 1 extra)
-        self.spread_shot_count = max(2, count)
+        self.is_burst_fire = True
+        self.burst_fire_end_time = now + duration_ms
+        self.burst_count = max(1, burst_count)
+        self.burst_offset_angle = float(offset_angle)
+        self.burst_cooldown_ms = max(0, cooldown_ms)
+        # Reset current burst state when a new effect is applied
+        self._burst_shots_remaining = 0
+        self._burst_ready_time = 0
 
     def _update_effects(self):
         """Update and expire all effects."""
         now = pygame.time.get_ticks()
 
-        # Expire spread_shot
-        if self.is_spread_shot and now >= self.spread_shot_end_time:
-            self.is_spread_shot = False
-            self.spread_shot_count = 0
-            # Note: Character firing logic must check self.is_spread_shot and self.spread_shot_count
-            # when generating new projectiles.
+        # Expire burst_fire
+        if self.is_burst_fire and now >= self.burst_fire_end_time:
+            self.is_burst_fire = False
+            self.burst_count = 0
+            self.burst_offset_angle = 0.0
+            self.burst_cooldown_ms = 0
+            self._burst_shots_remaining = 0
+            self._burst_ready_time = 0
 
-        # Expire projectile_behavior_spread
-        if self.is_projectile_behavior_spread and now >= self.projectile_behavior_spread_end_time:
-            self.is_projectile_behavior_spread = False
-            self.projectile_spread_angle = 0.0
-            # Note: Character's firing mechanism must check self.is_projectile_behavior_spread
-            # and use self.projectile_spread_angle when firing projectiles.
-
-        # Expire knockback
-        if self.is_knocked_back and now >= self.knockback_end_time:
-            self.is_knocked_back = False
-            # Clear the force application vectors
-            self.knockback_velocity_x = 0.0
-            self.knockback_velocity_y = 0.0
 
     def use_ability(self, ability_id: str, arena=None, **kwargs) -> bool:
         """Use an ability by ID."""

@@ -10,7 +10,6 @@ from Game.Objects import Projectile
 from Game.Objects import WeaponPickup
 from Game.Objects import Poop
 from Game.layers import LAYER_GROUND
-
 class Arena:
     def __init__(self, screen_dimensions, world_screen_dimensions, screen, world_screen, text):
         # Config variables
