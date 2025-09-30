@@ -5,6 +5,8 @@ from Game.Objects.grass import GrassField
 from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
+from Game.Weapons.rainbowgun import create_rainbowgun
+
 from Game.Objects import Projectile
 
 from Game.Objects import WeaponPickup
@@ -272,7 +274,13 @@ class Arena:
                                 if random.random() < drop_probability:
                                     gx, gy = gf.rect.center
                                     offset = random.randint(-20, 20)
-                                    pickup = WeaponPickup(Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)), (gx + offset, gy))
+                                    # Weapon pool for random drops
+                                    weapons_pool = [
+                                        Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)),
+                                        create_rainbowgun(),
+                                    ]
+                                    weapon = random.choice(weapons_pool)
+                                    pickup = WeaponPickup(weapon, (gx + offset, gy))
                                     self.objects.append(pickup)
                                 break
                     else:
