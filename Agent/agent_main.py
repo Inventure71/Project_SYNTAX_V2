@@ -25,8 +25,8 @@ class AgentMain:
             self.gemini = GeminiClient()
             self.active_client = self.gemini
         else:
-            self.chatGPT = ChatGPT()
-            self.chatGPT.switch_model("gpt-5-mini", True)
+        self.chatGPT = ChatGPT()
+        self.chatGPT.switch_model("gpt-5-mini", True)
                 self.active_client = self.chatGPT
 
         # Project structure
@@ -928,13 +928,25 @@ Generate the code to add effect tracking and application methods."""
         
         # Extract init additions and methods from response
         import re
+        import textwrap
         
         # Find INIT_ADDITIONS
         init_match = re.search(r'# INIT_ADDITIONS.*?\n(.*?)(?=\n# METHODS|$)', response, re.DOTALL)
         methods_match = re.search(r'# METHODS.*?\n(.*?)(?=```|$)', response, re.DOTALL)
         
         if init_match:
-            init_additions = "\n        " + init_match.group(1).strip()
+            # Clean up indentation
+            raw_init = init_match.group(1).strip()
+            # Ensure proper indentation (8 spaces for __init__ content)
+            init_lines = raw_init.split('\n')
+            fixed_init_lines = []
+            for line in init_lines:
+                if line.strip():
+                    # Remove any existing indentation and add correct indentation
+                    fixed_init_lines.append("        " + line.strip())
+                else:
+                    fixed_init_lines.append("")
+            init_additions = "\n        # Effect tracking\n" + "\n".join(fixed_init_lines)
         else:
             # Fallback: generate basic effect tracking
             init_additions = "\n        # Effect tracking\n"
@@ -943,12 +955,33 @@ Generate the code to add effect tracking and application methods."""
                 init_additions += f"        self.{effect}_end_time = 0\n"
         
         if methods_match:
-            new_methods = "\n    " + methods_match.group(1).strip() + "\n"
+            # Clean up method indentation
+            raw_methods = methods_match.group(1).strip()
+            # Use textwrap to fix indentation
+            methods_dedented = textwrap.dedent(raw_methods)
+            # Add 4 spaces for class method level
+            methods_lines = methods_dedented.split('\n')
+            fixed_methods = []
+            for line in methods_lines:
+                if line.strip():
+                    if line.strip().startswith('def '):
+                        # Method definition - 4 spaces
+                        fixed_methods.append("    " + line.strip())
+                    elif line.strip().startswith('"""') or line.strip().startswith("'''"):
+                        # Docstring - 8 spaces
+                        fixed_methods.append("        " + line.strip())
+                    else:
+                        # Method body - 8 spaces
+                        fixed_methods.append("        " + line.strip())
+                else:
+                    fixed_methods.append("")
+            new_methods = "\n    # ----- Effect Methods -----\n" + "\n".join(fixed_methods) + "\n"
         else:
             # Fallback: generate basic methods
             new_methods = "\n    # ----- Effect Methods -----\n"
             for effect in effects_to_add:
                 new_methods += f"""    def apply_{effect}(self, duration_ms: int):
+        \"\"\"Apply {effect} effect to this character.\"\"\"
         if self.is_dead():
             return
         now = pygame.time.get_ticks()
@@ -957,6 +990,7 @@ Generate the code to add effect tracking and application methods."""
     
 """
             new_methods += "    def _update_effects(self):\n"
+            new_methods += "        \"\"\"Update and expire effects.\"\"\"\n"
             new_methods += "        now = pygame.time.get_ticks()\n"
             for effect in effects_to_add:
                 new_methods += f"        if self.is_{effect} and now >= self.{effect}_end_time:\n"
@@ -1097,7 +1131,7 @@ def create_{weapon_name.lower()}() -> Weapon:
         
         file_path = f"Game/Objects/{weapon_name.lower()}_projectile.py"
         
-        # Generate effect application code
+        # Generate effect application code (properly indented)
         effect_application_code = ""
         for effect in effect_types:
             details = effect_details.get(effect, {})
@@ -1105,9 +1139,11 @@ def create_{weapon_name.lower()}() -> Weapon:
             
             if effect == "freeze" or effect == "slow":
                 slow_percent = details.get("slow_percent", 0.5)
-                effect_application_code += f"            target.apply_{effect}({duration}, {slow_percent})\n"
+                effect_application_code += f"            if hasattr(target, 'apply_{effect}'):\n"
+                effect_application_code += f"                target.apply_{effect}({duration}, {slow_percent})\n"
             else:
-                effect_application_code += f"            target.apply_{effect}({duration})\n"
+                effect_application_code += f"            if hasattr(target, 'apply_{effect}'):\n"
+                effect_application_code += f"                target.apply_{effect}({duration})\n"
         
         code = f'''"""
 Custom Projectile for {weapon_name}
@@ -1321,10 +1357,11 @@ class {weapon_name}Projectile(Projectile):
         if match:
             # Replace single weapon with random choice from pool
             old_code = match.group(1)
-            new_code = f'''# Weapon pool for random drops
+            # Properly indented code (golden field section uses 36 spaces base indent)
+            new_code = '''# Weapon pool for random drops
                                     weapons_pool = [
                                         Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)),
-                                        create_{weapon_name.lower()}(),
+                                        create_''' + weapon_name.lower() + '''(),
                                     ]
                                     weapon = random.choice(weapons_pool)
                                     pickup = WeaponPickup(weapon, (gx + offset, gy))'''
