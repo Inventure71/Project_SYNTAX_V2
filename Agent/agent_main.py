@@ -11,12 +11,13 @@ from Agent.gemini_client import GeminiClient
 
 
 class AgentMain:
-    def __init__(self, use_gemini: bool = True):
+    def __init__(self, use_gemini: bool = True, max_requests_before_auth: int = 10):
         """
         Initialize the agent with either Gemini or ChatGPT backend.
         
         Args:
             use_gemini: If True, use Gemini API; if False, use ChatGPT
+            max_requests_before_auth: Maximum API requests before asking user to continue
         """
         self.use_gemini = use_gemini
         
@@ -33,12 +34,132 @@ class AgentMain:
         self.project_structure_complex = None
         self.project_structure_complex_with_files = None
 
+        # Request limiting
+        self.max_requests_before_auth = max_requests_before_auth
+        self.request_count = 0
+        self.user_approved_continuation = True
+        
+        # Backup management
+        self.backup_dir = "Backup/Agent_Backups"
+        self.current_backup_id = None
+
         self.update_project_structure()
 
     def update_project_structure(self):
         self.project_structure_simple = get_project_structure(False)
         self.project_structure_complex = get_project_structure(True)
         self.project_structure_complex_with_files = collect_directory_files_and_contents("Game")
+    
+    def _create_backup(self, description: str = "agent_changes") -> str:
+        """
+        Create a backup of important files before making changes.
+        
+        Returns:
+            backup_id: Unique identifier for this backup
+        """
+        import os
+        import shutil
+        from datetime import datetime
+        
+        # Create backup directory if it doesn't exist
+        os.makedirs(self.backup_dir, exist_ok=True)
+        
+        # Generate backup ID
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_id = f"{timestamp}_{description}"
+        backup_path = os.path.join(self.backup_dir, backup_id)
+        os.makedirs(backup_path, exist_ok=True)
+        
+        # Files/directories to backup
+        backup_targets = [
+            "Game/Character/cow.py",
+            "Game/Abilities",
+            "Game/Weapons",
+            "Game/Objects",
+            "main.py"
+        ]
+        
+        print(f"📦 Creating backup: {backup_id}")
+        for target in backup_targets:
+            if os.path.exists(target):
+                dest = os.path.join(backup_path, target)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                
+                if os.path.isdir(target):
+                    if os.path.exists(dest):
+                        shutil.rmtree(dest)
+                    shutil.copytree(target, dest)
+                else:
+                    shutil.copy2(target, dest)
+                print(f"  ✓ Backed up: {target}")
+        
+        self.current_backup_id = backup_id
+        return backup_id
+    
+    def restore_backup(self, backup_id: str = None):
+        """
+        Restore files from a backup.
+        
+        Args:
+            backup_id: ID of backup to restore (if None, uses most recent)
+        """
+        import os
+        import shutil
+        
+        if backup_id is None:
+            backup_id = self.current_backup_id
+        
+        if backup_id is None:
+            # Find most recent backup
+            backups = sorted(os.listdir(self.backup_dir)) if os.path.exists(self.backup_dir) else []
+            if not backups:
+                print("❌ No backups found")
+                return False
+            backup_id = backups[-1]
+        
+        backup_path = os.path.join(self.backup_dir, backup_id)
+        if not os.path.exists(backup_path):
+            print(f"❌ Backup not found: {backup_id}")
+            return False
+        
+        print(f"♻️  Restoring from backup: {backup_id}")
+        
+        # Restore each file/directory
+        for item in os.listdir(backup_path):
+            source = os.path.join(backup_path, item)
+            dest = item
+            
+            if os.path.isdir(source):
+                if os.path.exists(dest):
+                    shutil.rmtree(dest)
+                shutil.copytree(source, dest)
+                print(f"  ✓ Restored: {dest}/")
+            else:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(source, dest)
+                print(f"  ✓ Restored: {dest}")
+        
+        print("✓ Restore complete!")
+        return True
+    
+    def list_backups(self):
+        """List all available backups."""
+        import os
+        
+        if not os.path.exists(self.backup_dir):
+            print("No backups found")
+            return []
+        
+        backups = sorted(os.listdir(self.backup_dir))
+        if not backups:
+            print("No backups found")
+            return []
+        
+        print("\n📦 Available backups:")
+        for backup in backups:
+            print(f"  - {backup}")
+        
+        return backups
 
     def test(self):
         # load from agents.md
@@ -169,10 +290,16 @@ Return ONLY the Objective and the list of tasks formatted exactly as specified a
             "plan": None,
             "tasks": [],
             "success": False,
-            "errors": []
+            "errors": [],
+            "backup_id": None
         }
         
         try:
+            # Step 0: Create backup
+            print("\n💾 Creating backup...")
+            backup_id = self._create_backup("ability_creation")
+            results["backup_id"] = backup_id
+            
             # Step 1: Plan the ability
             print("\n📋 Step 1: Planning...")
             plan = self._plan_ability(ability_description)
@@ -214,6 +341,36 @@ Return ONLY the Objective and the list of tasks formatted exactly as specified a
         print("\n" + "="*60)
         return results
     
+    def _check_request_limit(self) -> bool:
+        """
+        Check if we've hit the request limit and need user authorization.
+        
+        Returns:
+            True if can continue, False if user denied continuation
+        """
+        self.request_count += 1
+        
+        if self.request_count >= self.max_requests_before_auth and self.user_approved_continuation:
+            print("\n" + "⚠️ " * 20)
+            print(f"⚠️  Request limit reached ({self.max_requests_before_auth} requests)")
+            print("⚠️  The agent has made multiple API calls.")
+            print("⚠️  This may incur costs depending on your API plan.")
+            print("⚠️ " * 20)
+            
+            response = input("\n👉 Continue with more requests? (yes/no): ").strip().lower()
+            
+            if response in ['yes', 'y']:
+                print("✓ Continuing... (resetting counter)\n")
+                self.request_count = 0  # Reset counter
+                self.user_approved_continuation = True
+                return True
+            else:
+                print("❌ Stopping agent workflow.\n")
+                self.user_approved_continuation = False
+                return False
+        
+        return self.user_approved_continuation
+    
     def _plan_ability(self, ability_description: str) -> dict:
         """
         Step 1: Create a detailed implementation plan.
@@ -226,9 +383,13 @@ Return ONLY the Objective and the list of tasks formatted exactly as specified a
             project_documentation = file.read()
         
         # Read existing ability system to understand the pattern
-        from Agent.Tools.read_file import read_lines
-        ability_base = read_lines("Game/Abilities/ability.py", 0, 500)
-        dash_example = read_lines("Game/Abilities/dash.py", 0, 200)
+        from Agent.Tools.read_file import read_file
+        ability_base_lines = read_file("Game/Abilities/ability.py", line_count=False)
+        dash_example_lines = read_file("Game/Abilities/dash.py", line_count=False)
+        
+        # Convert to string (take first 100 lines if too long)
+        ability_base = "".join(ability_base_lines[:100]) if isinstance(ability_base_lines, list) else ability_base_lines
+        dash_example = "".join(dash_example_lines[:50]) if isinstance(dash_example_lines, list) else dash_example_lines
         
         system_prompt = """You are a planning expert for game development.
 
@@ -284,6 +445,10 @@ Break down into 3-6 small, focused tasks."""
 {self.project_structure_complex}
 
 Create a detailed plan ensuring the ability can be used by AND affect any character."""
+
+        # Check request limit before making API call
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
 
         response = self.active_client.ask(
             prompt=prompt,
@@ -387,6 +552,10 @@ Be precise and complete."""
 
 Generate complete, working code for all files."""
 
+        # Check request limit before making API call
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
+
         response = self.active_client.ask(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -483,6 +652,10 @@ Output:
 
 Is the implementation correct and complete?"""
 
+        # Check request limit before making API call
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
+
         response = self.active_client.ask(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -505,6 +678,253 @@ Is the implementation correct and complete?"""
                 "response": response
             }
 
+    def create_weapon_workflow(self, weapon_description: str) -> dict:
+        """
+        Complete workflow for creating a new weapon.
+        Weapons are simpler than abilities - they define damage, ammo, sprites, and projectile behavior.
+        
+        Args:
+            weapon_description: Natural language description of the weapon
+            
+        Returns:
+            Dictionary with workflow results
+        """
+        print("\n" + "="*60)
+        print("🔫 WEAPON CREATION WORKFLOW")
+        print("="*60)
+        
+        results = {
+            "description": weapon_description,
+            "weapon_name": None,
+            "success": False,
+            "errors": [],
+            "backup_id": None,
+            "files_created": []
+        }
+        
+        try:
+            # Step 0: Create backup
+            print("\n💾 Creating backup...")
+            backup_id = self._create_backup("weapon_creation")
+            results["backup_id"] = backup_id
+            
+            # Step 1: Generate weapon code
+            print("\n📋 Generating weapon...")
+            weapon_code = self._generate_weapon(weapon_description)
+            results["weapon_name"] = weapon_code.get("weapon_name", "CustomWeapon")
+            
+            # Step 2: Create weapon file
+            print("\n🔨 Creating weapon file...")
+            weapon_file = self._create_weapon_file(weapon_code)
+            if weapon_file:
+                results["files_created"].append(weapon_file)
+                print(f"  ✓ Created: {weapon_file}")
+            
+            # Step 3: Add weapon to game (create integration example)
+            print("\n🎮 Creating integration example...")
+            integration = self._create_weapon_integration_example(weapon_code)
+            print(f"  ✓ Weapon can be added in main.py or Arena")
+            print(f"  ✓ See: {integration}")
+            
+            results["success"] = True
+            results["integration_example"] = integration
+            
+        except Exception as e:
+            print(f"\n❌ Workflow failed: {e}")
+            results["errors"].append(str(e))
+            import traceback
+            traceback.print_exc()
+        
+        print("\n" + "="*60)
+        return results
+    
+    def _generate_weapon(self, weapon_description: str) -> dict:
+        """Generate weapon configuration from description."""
+        from Agent.Tools.read_file import read_file
+        
+        # Read existing weapon as example
+        weapon_example_lines = read_file("Game/Weapons/weapon.py", line_count=False)
+        weapon_example = "".join(weapon_example_lines[:100]) if isinstance(weapon_example_lines, list) else weapon_example_lines
+        
+        system_prompt = """You are a game weapon designer.
+
+Your task: Create a weapon configuration based on user description.
+
+A weapon needs:
+- name: Display name
+- ammo_per_shot: How much ammo each shot consumes
+- projectile_speed: Speed of the projectile (pixels per frame)
+- damage: Damage dealt on hit
+- floor_image_name: Sprite file when on ground (optional, e.g., "bow.png")
+- floor_image_scale: Size of floor sprite (tuple, e.g., (28, 28))
+- projectile_image_name: Sprite for the projectile (optional, e.g., "arrow.png")
+- projectile_image_scale: Size of projectile sprite (tuple, e.g., (18, 6))
+
+Output as JSON:
+{
+  "weapon_name": "UniqueWeaponName",
+  "display_name": "Display Name",
+  "ammo_per_shot": 1,
+  "projectile_speed": 18.0,
+  "damage": 10.0,
+  "floor_image_name": "weapon_sprite.png",
+  "floor_image_scale": [28, 28],
+  "projectile_image_name": "projectile_sprite.png",
+  "projectile_image_scale": [18, 6],
+  "description": "Brief description of weapon behavior"
+}
+
+If no sprite is specified, leave as null."""
+
+        prompt = f"""Create a weapon configuration:
+
+**Weapon Description**: {weapon_description}
+
+**Existing Weapon System**:
+```python
+{weapon_example}
+```
+
+Generate a complete weapon configuration as JSON."""
+
+        # Check request limit
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
+
+        response = self.active_client.ask(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            thinking_budget=-1 if self.use_gemini else None
+        )
+        
+        # Parse JSON from response
+        import json
+        import re
+        
+        # Try to extract JSON
+        try:
+            if "```json" in response:
+                json_start = response.find("```json") + 7
+                json_end = response.find("```", json_start)
+                json_str = response[json_start:json_end].strip()
+                return json.loads(json_str)
+            elif "{" in response:
+                json_start = response.find("{")
+                json_end = response.rfind("}") + 1
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
+        except:
+            pass
+        
+        # Fallback
+        return {
+            "weapon_name": "CustomWeapon",
+            "display_name": "Custom Weapon",
+            "ammo_per_shot": 1,
+            "projectile_speed": 16.0,
+            "damage": 10.0,
+            "floor_image_name": None,
+            "floor_image_scale": [28, 28],
+            "projectile_image_name": None,
+            "projectile_image_scale": [18, 6],
+            "description": weapon_description
+        }
+    
+    def _create_weapon_file(self, weapon_config: dict) -> str:
+        """Create a Python file with the weapon instantiation."""
+        weapon_name = weapon_config.get("weapon_name", "CustomWeapon")
+        file_path = f"Game/Weapons/{weapon_name.lower()}.py"
+        
+        # Generate weapon code
+        code = f'''"""
+{weapon_config.get("display_name", weapon_name)} - Custom Weapon
+
+{weapon_config.get("description", "A custom weapon created by the agent.")}
+"""
+
+from Game.Weapons.weapon import Weapon
+
+
+def create_{weapon_name.lower()}() -> Weapon:
+    """
+    Factory function to create a {weapon_config.get("display_name", weapon_name)}.
+    
+    Returns:
+        Configured Weapon instance
+    """
+    return Weapon(
+        name="{weapon_config.get("display_name", weapon_name)}",
+        ammo_per_shot={weapon_config.get("ammo_per_shot", 1)},
+        projectile_speed={weapon_config.get("projectile_speed", 16.0)},
+        damage={weapon_config.get("damage", 10.0)},
+        floor_image_name={repr(weapon_config.get("floor_image_name"))},
+        floor_image_scale=tuple({weapon_config.get("floor_image_scale", [28, 28])}),
+        projectile_image_name={repr(weapon_config.get("projectile_image_name"))},
+        projectile_image_scale=tuple({weapon_config.get("projectile_image_scale", [18, 6])})
+    )
+
+
+# Quick access instance
+{weapon_name.upper()} = create_{weapon_name.lower()}()
+'''
+        
+        # Write file
+        from Agent.Tools.write_to_file import create_file
+        result = create_file(file_path, code)
+        
+        if "success" in result:
+            return file_path
+        else:
+            raise Exception(f"Failed to create weapon file: {result}")
+    
+    def _create_weapon_integration_example(self, weapon_config: dict) -> str:
+        """Create integration example showing how to use the weapon."""
+        weapon_name = weapon_config.get("weapon_name", "CustomWeapon")
+        
+        example = f'''
+# ============================================================
+# HOW TO USE: {weapon_config.get("display_name", weapon_name)}
+# ============================================================
+
+# 1. Import the weapon
+from Game.Weapons.{weapon_name.lower()} import create_{weapon_name.lower()}
+
+# 2. Spawn as pickup in Arena (add to golden field drops)
+# In Game/Arena/arena.py, modify handle_key_event where golden fields spawn pickups:
+
+from Game.Weapons.{weapon_name.lower()} import create_{weapon_name.lower()}
+
+# Inside the golden field eating check:
+if random.random() < drop_probability:
+    gx, gy = gf.rect.center
+    offset = random.randint(-20, 20)
+    
+    # Create weapon pickup with your new weapon
+    weapon = create_{weapon_name.lower()}()
+    pickup = WeaponPickup(weapon, (gx + offset, gy))
+    self.objects.append(pickup)
+
+# 3. Give to player/AI directly
+# In main.py when creating characters:
+
+from Game.Weapons.{weapon_name.lower()} import create_{weapon_name.lower()}
+
+# Give weapon to player
+player.equip_weapon(create_{weapon_name.lower()}())
+
+# Give weapon to AI
+npc.equip_weapon(create_{weapon_name.lower()}())
+
+# ============================================================
+'''
+        
+        # Save to file
+        example_file = f"Game/Weapons/{weapon_name.lower()}_usage.txt"
+        with open(example_file, "w") as f:
+            f.write(example)
+        
+        return example_file
+    
     def run(self):
         """Main execution loop for the agent."""
         pass

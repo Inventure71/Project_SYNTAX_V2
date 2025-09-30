@@ -285,8 +285,9 @@ VERIFIED: Implementation is complete and correct
 ```python
 from Agent.agent_main import AgentMain
 
-# Initialize agent
-agent = AgentMain(use_gemini=True)
+# Initialize agent with request limiting
+# max_requests_before_auth: Number of API calls before asking user permission
+agent = AgentMain(use_gemini=True, max_requests_before_auth=10)
 
 # Create ability
 result = agent.create_ability_workflow(
@@ -300,6 +301,33 @@ if result["success"]:
 else:
     print("Failed:", result["errors"])
 ```
+
+### Request Limiting (Safety Feature)
+
+The agent includes a **request limit** to prevent excessive API calls:
+
+```python
+# Default: 10 requests before asking permission
+agent = AgentMain(use_gemini=True, max_requests_before_auth=10)
+
+# More permissive: 20 requests
+agent = AgentMain(use_gemini=True, max_requests_before_auth=20)
+
+# Very cautious: 3 requests
+agent = AgentMain(use_gemini=True, max_requests_before_auth=3)
+```
+
+**What happens when limit is reached:**
+1. Workflow pauses
+2. Shows warning about API usage
+3. Asks: "Continue with more requests? (yes/no)"
+4. If yes: Resets counter and continues
+5. If no: Stops workflow gracefully
+
+**Why this matters:**
+- Prevents runaway API costs
+- Gives you control over long-running operations
+- Protects against potential infinite loops
 
 ### Using Created Abilities
 ```python

@@ -11,8 +11,10 @@ def test_ability_creation():
     """Test the ability creation workflow."""
     
     # Initialize the agent (using Gemini by default)
+    # max_requests_before_auth=10 means it will ask for permission after 10 API calls
     print("Initializing agent...")
-    agent = AgentMain(use_gemini=True)
+    print("(Request limit: 10 API calls before requiring authorization)\n")
+    agent = AgentMain(use_gemini=True, max_requests_before_auth=10)
     
     # Example ability descriptions
     example_abilities = [

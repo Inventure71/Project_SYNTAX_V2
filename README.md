@@ -58,6 +58,8 @@ python test_ability_creation.py
 
 This launches the ability creation workflow where you can describe abilities in natural language.
 
+**Safety Feature:** The agent includes a request limit (default: 10 API calls) before asking for your permission to continue. This prevents excessive API usage and costs.
+
 ## Architecture
 
 ### Core Systems
