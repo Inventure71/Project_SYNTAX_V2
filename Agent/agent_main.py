@@ -764,7 +764,28 @@ Is the implementation correct and complete?"""
                 results["files_modified"].append("Game/Arena/arena.py")
             print("  ✓ Added to golden field loot pool")
             
-            results["success"] = True
+            # Step 7: Validate implementation
+            print("\n🔍 Validating implementation...")
+            validation_results = self._validate_weapon_implementation(weapon_plan, results)
+            results["validation"] = validation_results
+            
+            if validation_results["has_errors"]:
+                print(f"  ⚠️  Found {len(validation_results['errors'])} issues:")
+                for error in validation_results["errors"]:
+                    print(f"     - {error}")
+                
+                # Attempt to fix issues
+                print("\n🔧 Attempting to fix issues...")
+                fix_success = self._fix_weapon_issues(weapon_plan, validation_results)
+                if fix_success:
+                    print("  ✓ Issues fixed!")
+                    results["success"] = True
+                else:
+                    print("  ⚠️  Some issues remain")
+                    results["success"] = False
+            else:
+                print("  ✓ All validation checks passed!")
+                results["success"] = True
             
         except Exception as e:
             print(f"\n❌ Workflow failed: {e}")
@@ -784,39 +805,96 @@ Is the implementation correct and complete?"""
         """
         from Agent.Tools.read_file import read_file
         
-        system_prompt = """You are a game weapon analyzer.
+        # Read existing code for context
+        weapon_base = read_file("Game/Weapons/weapon.py", line_count=False)
+        projectile_base = read_file("Game/Objects/projectile.py", line_count=False)
+        cow_base = read_file("Game/Character/cow.py", line_count=False)
+        
+        weapon_base_str = "".join(weapon_base[:50]) if isinstance(weapon_base, list) else str(weapon_base)[:2000]
+        projectile_base_str = "".join(projectile_base[:50]) if isinstance(projectile_base, list) else str(projectile_base)[:2000]
+        cow_base_str = "".join(cow_base[:100]) if isinstance(cow_base, list) else str(cow_base)[:3000]
+        
+        system_prompt = """You are a game weapon analyzer and designer with deep understanding of game mechanics.
 
-Analyze the weapon description and determine:
-1. Does it need special effects? (freeze, burn, slow, stun, poison, etc.)
-2. What effects are needed?
-3. What are the stats? (damage, ammo_per_shot, projectile_speed)
+Your task is to THOROUGHLY analyze the weapon description and create a COMPLETE specification.
 
-Output as JSON:
+## Analysis Checklist:
+1. **Effect Detection**: Does this weapon have ANY special behavior beyond basic damage?
+   - Movement effects: knockback, pull, teleport, dash
+   - Status effects: freeze, slow, stun, burn, poison, blind
+   - Buff/Debuff: damage boost, armor reduction, lifesteal
+   - Projectile behavior: homing, bouncing, piercing, splitting, zigzag
+   - Area effects: explosion, chain lightning, aura
+
+2. **Effect Details**: For EACH effect, specify:
+   - Duration (in milliseconds)
+   - Magnitude (percentages, force values, etc.)
+   - Interaction with character state (movement, actions, etc.)
+   - Visual feedback needed
+
+3. **Weapon Stats**: Balanced and appropriate:
+   - damage: 5-50 range (10-20 is standard)
+   - projectile_speed: 10-30 range (16-18 is standard)
+   - ammo_per_shot: Usually 1, can be higher for powerful weapons
+
+4. **Implementation Requirements**: What code changes are needed?
+   - New character state variables?
+   - Custom projectile class?
+   - Arena modifications?
+   - Effect application in update loop?
+
+## Output Format (STRICT JSON):
 {
-  "weapon_name": "FreezeGun",
-  "display_name": "Freeze Gun",
-  "has_effects": true,
-  "effect_types": ["freeze"],
+  "weapon_name": "DescriptiveName",  // CamelCase, no spaces, unique identifier
+  "display_name": "Display Name",     // User-facing name
+  "has_effects": true,                // true if ANY special behavior beyond damage
+  "effect_types": ["effect1", "effect2"],  // List all effects
   "effect_details": {
-    "freeze": {
-      "duration_ms": 3000,
-      "slow_percent": 0.5,
-      "description": "Slows movement by 50% for 3 seconds"
+    "effect1": {
+      "duration_ms": 3000,           // How long effect lasts
+      "magnitude": 0.5,               // Effect strength (context-dependent)
+      "description": "Detailed description of what this does",
+      "requires_update_loop": true,   // Does this need to apply every frame?
+      "state_variables": ["is_effect1", "effect1_end_time", "effect1_value"]  // What to add to Cow
     }
   },
   "ammo_per_shot": 1,
-  "projectile_speed": 18.0,
+  "projectile_speed": 16.0,
   "damage": 10.0,
-  "description": "Brief description"
+  "projectile_behavior": "standard",  // or "zigzag", "homing", "bouncing", etc.
+  "description": "Complete description of weapon behavior"
 }
 
-Common effects: freeze, burn, slow, stun, poison, knockback, lifesteal"""
+## Common Effects Reference:
+- **knockback**: Pushes character away (requires velocity vectors, update loop)
+- **freeze**: Prevents movement (requires is_frozen flag, end_time)
+- **slow**: Reduces speed (requires slow_percent, end_time)
+- **stun**: Prevents actions (requires is_stunned flag, end_time)
+- **burn/poison**: Damage over time (requires tick tracking, damage value)
+- **lifesteal**: Heal on damage (no character state needed, instant)
 
-        prompt = f"""Analyze this weapon:
+CRITICAL: Be thorough and specific. Think through HOW each effect will actually work in code."""
 
-**Description**: {weapon_description}
+        prompt = f"""Analyze this weapon description and create a COMPLETE specification:
 
-Determine if it needs effects and provide complete configuration."""
+**Weapon Description**: {weapon_description}
+
+**Existing Weapon System**:
+```python
+{weapon_base_str}
+```
+
+**Projectile Base Class**:
+```python
+{projectile_base_str}
+```
+
+**Character (Cow) Base Class** (shows what effects might already exist):
+```python
+{cow_base_str}
+```
+
+Provide a thorough analysis with ALL details needed for implementation."""
 
         if not self._check_request_limit():
             raise Exception("User stopped workflow - request limit reached")
@@ -834,14 +912,31 @@ Determine if it needs effects and provide complete configuration."""
                 json_start = response.find("```json") + 7
                 json_end = response.find("```", json_start)
                 json_str = response[json_start:json_end].strip()
-                return json.loads(json_str)
+                result = json.loads(json_str)
             elif "{" in response:
                 json_start = response.find("{")
                 json_end = response.rfind("}") + 1
                 json_str = response[json_start:json_end]
-                return json.loads(json_str)
-        except:
-            pass
+                result = json.loads(json_str)
+            else:
+                raise ValueError("No JSON found")
+            
+            # Validate required fields
+            if "weapon_name" not in result or "display_name" not in result:
+                raise ValueError("Missing required fields")
+            
+            print(f"\n📊 Analysis Complete:")
+            print(f"   Name: {result.get('display_name')}")
+            print(f"   Has Effects: {result.get('has_effects', False)}")
+            if result.get('has_effects'):
+                print(f"   Effects: {', '.join(result.get('effect_types', []))}")
+            print(f"   Damage: {result.get('damage')} | Speed: {result.get('projectile_speed')}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"⚠️  JSON parsing failed: {e}")
+            print(f"Response preview: {response[:500]}")
         
         # Fallback
         return {
@@ -887,66 +982,118 @@ Determine if it needs effects and provide complete configuration."""
             return True
         
         # Generate effect support code
-        system_prompt = """You are modifying the Cow class to add effect support.
+        system_prompt = """You are an expert at modifying game character classes to add status effect systems.
 
-Generate ONLY the code to add to the __init__ method and the effect methods.
+Your task: Generate COMPLETE, WORKING code to add effect support to the Cow character class.
 
-CRITICAL: Use NO INDENTATION in your output. Write everything flush left (no leading spaces).
-The system will add proper indentation automatically.
+## CRITICAL REQUIREMENTS:
 
-IMPORTANT: Effects must be properly integrated into the game loop:
+### 1. Indentation
+- Use NO INDENTATION in your output
+- Write everything flush left (no leading spaces)
+- The system will add proper indentation automatically
 
-1. Add effect state variables to __init__ (is_knocked_back, knockback_velocity_x, etc.)
-2. Add effect application methods (apply_knockback, apply_stun, etc.)
-3. Add effect application in update() method (apply movement/velocity changes)
-4. Add effect expiration in _update_effects() method
+### 2. Effect Implementation (COMPLETE LIFECYCLE)
+Every effect needs THREE parts:
 
-Output format:
+**A) State Variables (in __init__)**
+- Boolean flag: `is_effectname`
+- End time: `effectname_end_time`
+- Additional data: velocity vectors, damage values, etc.
+
+**B) Application Method (called when effect is applied)**
+```python
+def apply_effectname(self, param1, param2):
+    \"\"\"Apply effect to character.\"\"\"
+    if self.is_dead():
+        return
+    now = pygame.time.get_ticks()
+    self.is_effectname = True
+    self.effectname_end_time = now + duration_ms
+    # Set effect-specific values
+```
+
+**C) Integration Points:**
+- UPDATE_MODIFICATIONS: Code to add to update() for per-frame effects
+- EXPIRATION: Code in _update_effects() to clean up expired effects
+
+### 3. Effect Type Patterns
+
+**Movement Effects (knockback, pull, dash):**
+- Need: velocity_x, velocity_y, end_time
+- UPDATE: Apply velocity to position every frame
+- EXPIRE: Clear velocity and flag
+
+**Status Effects (freeze, stun, slow):**
+- Need: flag, end_time, magnitude (for slow/speed changes)
+- UPDATE: Modify movement/action availability
+- EXPIRE: Clear flag
+
+**Damage Over Time (burn, poison):**
+- Need: flag, end_time, damage_per_tick, last_tick_time
+- UPDATE: Apply damage each tick
+- EXPIRE: Clear flag
+
+**Instant Effects (lifesteal, explosion):**
+- No state needed, apply immediately in projectile handler
+
+### 4. Output Format (EXACT):
 ```python
 # INIT_ADDITIONS
-self.is_knocked_back = False
-self.knockback_velocity_x = 0.0
-self.knockback_velocity_y = 0.0
-self.knockback_end_time = 0
+self.is_effectname = False
+self.effectname_end_time = 0
+self.effectname_data = 0.0
 
-# UPDATE_MODIFICATIONS (add to existing update method)
-# Apply knockback movement if active
-if self.is_knocked_back:
-    self.position.x += self.knockback_velocity_x
-    self.position.y += self.knockback_velocity_y
+# UPDATE_MODIFICATIONS
+# Apply effectname if active
+if self.is_effectname:
+    # Do per-frame effect application
+    self.position.x += self.effectname_velocity_x
+    # Check for ticks, modify speed, etc.
 
 # METHODS
-def apply_knockback(self, vector_x: float, vector_y: float, duration_ms: int = 150):
-\"\"\"Apply knockback effect that moves character.\"\"\"
+def apply_effectname(self, param1, param2):
+\"\"\"Apply effectname to character.\"\"\"
 if self.is_dead():
     return
 now = pygame.time.get_ticks()
-self.is_knocked_back = True
-self.knockback_velocity_x = vector_x
-self.knockback_velocity_y = vector_y
-self.knockback_end_time = now + duration_ms
+self.is_effectname = True
+self.effectname_end_time = now + param1
+self.effectname_data = param2
 
 def _update_effects(self):
-\"\"\"Update and expire effects.\"\"\"
+\"\"\"Update and expire all effects.\"\"\"
 now = pygame.time.get_ticks()
-# Handle Knockback expiration
-if self.is_knocked_back and now >= self.knockback_end_time:
-    self.is_knocked_back = False
-    self.knockback_velocity_x = 0.0
-    self.knockback_velocity_y = 0.0
+# Expire effectname
+if self.is_effectname and now >= self.effectname_end_time:
+    self.is_effectname = False
+    self.effectname_data = 0.0
 ```
 
-IMPORTANT:
-1. Effects need BOTH state management AND active application in update loop
-2. Movement effects (knockback) must modify position in update()
-3. Time-based effects need expiration logic in _update_effects()
-4. Make it work for ANY character (player or AI)"""
+### 5. Common Pitfalls to AVOID:
+❌ Forgetting UPDATE_MODIFICATIONS for movement effects
+❌ Not checking is_dead() before applying effects
+❌ Missing expiration logic
+❌ Incorrect parameter passing (duration, magnitude, etc.)
+❌ Not resetting effect data on expiration
 
-        prompt = f"""Add these effects to Cow class: {effects_to_add}
+CRITICAL: Be COMPLETE and CORRECT. Think through the full lifecycle of each effect."""
 
-Current __init__ has: health, stamina, ammo, position, etc.
+        prompt = f"""Add COMPLETE effect support for these effects: {effects_to_add}
 
-Generate the code to add effect tracking and application methods."""
+**Current Cow class context:**
+- Has __init__ with: health, stamina, ammo, position (Vector2), velocity
+- Has update(arena) method that calls handle_collisions()
+- Already has _update_effects() if effects exist
+- Is used by BOTH player and AI characters
+
+**For each effect, provide:**
+1. ALL state variables needed
+2. Complete apply_effectname() method
+3. UPDATE_MODIFICATIONS if effect needs per-frame updates
+4. Expiration logic for _update_effects()
+
+Be thorough and think through HOW the effect actually works in the game loop."""
 
         if not self._check_request_limit():
             raise Exception("User stopped workflow - request limit reached")
@@ -1230,27 +1377,153 @@ def create_{weapon_name.lower()}() -> Weapon:
     
     def _create_effect_projectile(self, weapon_plan: dict) -> str:
         """Create custom projectile class that applies effects on hit."""
+        from Agent.Tools.read_file import read_file
+        
         weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
         effect_types = weapon_plan.get("effect_types", [])
         effect_details = weapon_plan.get("effect_details", {})
         
         file_path = f"Game/Objects/{weapon_name.lower()}_projectile.py"
         
-        # Generate effect application code (properly indented)
-        effect_application_code = ""
+        # Read base projectile for reference
+        projectile_base = read_file("Game/Objects/projectile.py", line_count=False)
+        projectile_str = "".join(projectile_base[:80]) if isinstance(projectile_base, list) else str(projectile_base)[:2000]
+        
+        # Generate effect application code using AI for better accuracy
+        system_prompt = """You are creating a custom projectile class for a game weapon.
+
+Your task: Generate a COMPLETE, CORRECT custom projectile class that inherits from Projectile.
+
+## CRITICAL REQUIREMENTS:
+
+### 1. Proper Inheritance
+The base Projectile class has this constructor signature:
+```python
+def __init__(self, start_pos, direction, speed: float = 16.0, color=(255, 250, 220), 
+             radius: int = 4, max_distance: float = 2400.0, sprite=None, 
+             damage: float = 10.0, owner=None):
+```
+
+Your custom projectile MUST call super().__init__() with ALL positional parameters in the correct order:
+```python
+super().__init__(
+    position,           # start_pos
+    direction,          # direction
+    speed,             # speed
+    (R, G, B),         # color (tuple of 3 ints) - REQUIRED
+    4,                 # radius (int) - REQUIRED
+    2400.0,            # max_distance
+    sprite,            # sprite
+    damage,            # damage
+    owner              # owner
+)
+```
+
+### 2. Effect Application
+In the `on_character_hit` method:
+1. Apply damage first
+2. Check if target is alive
+3. Apply each effect using the character's apply_effectname() method
+4. Pass correct parameters based on effect type
+
+### 3. Common Effect Patterns
+- **Movement effects** (knockback): Pass velocity vector and duration
+  ```python
+  target.apply_knockback(vector_x, vector_y, duration_ms)
+  ```
+- **Status effects** (freeze, slow): Pass duration and magnitude
+  ```python
+  target.apply_freeze(duration_ms, slow_percent)
+  ```
+- **Simple effects** (stun, burn): Pass duration only
+  ```python
+  target.apply_stun(duration_ms)
+  ```
+
+### 4. Complete Example
+```python
+class ExampleProjectile(Projectile):
+    def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
+        # CRITICAL: Pass color and radius explicitly
+        super().__init__(position, direction, speed, (255, 100, 50), 4, 2400.0, sprite, damage, owner)
+        self.effect_types = ["freeze"]
+        self.effect_details = {"freeze": {"duration_ms": 3000, "slow_percent": 0.5}}
+    
+    def on_character_hit(self, target, arena):
+        # Apply damage
+        if hasattr(target, 'take_damage'):
+            target.take_damage(self.damage)
+        
+        # Apply effects
+        if not hasattr(target, 'is_dead') or not target.is_dead():
+            if hasattr(target, 'apply_freeze'):
+                target.apply_freeze(3000, 0.5)
+        
+        self.alive = False
+```
+
+Output ONLY the complete class definition. NO explanations."""
+
+        # Build effect info string
+        effect_info_str = ""
         for effect in effect_types:
             details = effect_details.get(effect, {})
-            duration = details.get("duration_ms", 3000)
-            
-            if effect == "freeze" or effect == "slow":
-                slow_percent = details.get("slow_percent", 0.5)
-                effect_application_code += f"            if hasattr(target, 'apply_{effect}'):\n"
-                effect_application_code += f"                target.apply_{effect}({duration}, {slow_percent})\n"
-            else:
-                effect_application_code += f"            if hasattr(target, 'apply_{effect}'):\n"
-                effect_application_code += f"                target.apply_{effect}({duration})\n"
+            effect_info_str += f"\n   - {effect}: {details}"
+
+        prompt = f"""Create a custom projectile class for weapon: {weapon_name}
+
+**Base Projectile Class:**
+```python
+{projectile_str}
+```
+
+**Effects to apply:**{effect_info_str}
+
+**Effect Details:**
+{effect_details}
+
+Generate the COMPLETE custom projectile class with:
+1. Proper super().__init__() call (with color and radius!)
+2. on_character_hit() method that applies all effects correctly
+3. Proper parameter passing for each effect type
+
+Use appropriate colors based on effects (e.g., blue for freeze, red for burn, etc.)."""
+
+        if not self._check_request_limit():
+            raise Exception("User stopped workflow - request limit reached")
+
+        response = self.active_client.ask(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            thinking_budget=-1 if self.use_gemini else None
+        )
         
-        code = f'''"""
+        # Extract code from response
+        import re
+        
+        # Look for class definition
+        if "```python" in response:
+            code_start = response.find("```python") + 9
+            code_end = response.find("```", code_start)
+            code = response[code_start:code_end].strip()
+        elif "class " in response:
+            # Extract from first class to end or next ```
+            lines = response.split('\n')
+            code_lines = []
+            in_class = False
+            for line in lines:
+                if 'class ' in line and weapon_name in line:
+                    in_class = True
+                if in_class:
+                    code_lines.append(line)
+                    if line.strip() and not line[0].isspace() and 'class' not in line and code_lines:
+                        break
+            code = '\n'.join(code_lines)
+        else:
+            raise Exception("AI did not generate class code")
+        
+        # Add header
+        full_code = f'''"""
 Custom Projectile for {weapon_name}
 
 Applies effects: {", ".join(effect_types)}
@@ -1261,43 +1534,20 @@ from pygame import Vector2
 from Game.Objects.projectile import Projectile
 
 
-class {weapon_name}Projectile(Projectile):
-    """
-    Custom projectile that applies {", ".join(effect_types)} effect(s) on hit.
-    """
-    
-    def __init__(self, position, direction, speed=16.0, damage=10.0, sprite=None, owner=None):
-        super().__init__(position, direction, speed, damage, sprite, owner)
-        self.effect_types = {effect_types}
-        self.effect_details = {effect_details}
-    
-    def on_character_hit(self, target, arena):
-        """
-        Called when this projectile hits a character.
-        Applies effects in addition to damage.
-        
-        Args:
-            target: The character that was hit
-            arena: The game arena
-        """
-        # Apply damage (standard projectile behavior)
-        if hasattr(target, 'take_damage'):
-            target.take_damage(self.damage)
-        
-        # Apply effects
-        if not hasattr(target, 'is_dead') or not target.is_dead():
-{effect_application_code}
-        
-        # Mark projectile as dead
-        self.alive = False
+{code}
 '''
         
         # Write file
         from Agent.Tools.write_to_file import create_file
-        result = create_file(file_path, code)
+        result = create_file(file_path, full_code)
         
         if "success" in result:
-            return file_path
+            # Verify the file compiles
+            try:
+                compile(full_code, file_path, 'exec')
+                return file_path
+            except SyntaxError as e:
+                raise Exception(f"Generated projectile has syntax error: {e}")
         else:
             raise Exception(f"Failed to create projectile file: {result}")
     
@@ -1663,6 +1913,190 @@ npc.equip_weapon(create_{weapon_name.lower()}())
             f.write(example)
         
         return example_file
+    
+    def _validate_weapon_implementation(self, weapon_plan: dict, results: dict) -> dict:
+        """
+        Validate that the weapon implementation is complete and correct.
+        
+        Returns:
+            dict with validation results
+        """
+        validation = {
+            "has_errors": False,
+            "errors": [],
+            "warnings": [],
+            "checks_passed": []
+        }
+        
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        has_effects = weapon_plan.get("has_effects", False)
+        effect_types = weapon_plan.get("effect_types", [])
+        
+        # Check 1: Weapon file exists and is syntactically correct
+        try:
+            weapon_file = f"Game/Weapons/{weapon_name.lower()}.py"
+            with open(weapon_file, 'r') as f:
+                weapon_code = f.read()
+            compile(weapon_code, weapon_file, 'exec')
+            validation["checks_passed"].append("Weapon file syntax valid")
+        except FileNotFoundError:
+            validation["errors"].append(f"Weapon file not found: {weapon_file}")
+            validation["has_errors"] = True
+        except SyntaxError as e:
+            validation["errors"].append(f"Syntax error in weapon file: {e}")
+            validation["has_errors"] = True
+        
+        # Check 2: If has effects, custom projectile must exist
+        if has_effects:
+            try:
+                projectile_file = f"Game/Objects/{weapon_name.lower()}_projectile.py"
+                with open(projectile_file, 'r') as f:
+                    proj_code = f.read()
+                compile(proj_code, projectile_file, 'exec')
+                
+                # Verify projectile has on_character_hit method
+                if "def on_character_hit" in proj_code:
+                    validation["checks_passed"].append("Custom projectile has on_character_hit")
+                else:
+                    validation["errors"].append("Custom projectile missing on_character_hit method")
+                    validation["has_errors"] = True
+                
+                # Verify projectile applies all effects
+                for effect in effect_types:
+                    if f"apply_{effect}" in proj_code:
+                        validation["checks_passed"].append(f"Projectile applies {effect} effect")
+                    else:
+                        validation["errors"].append(f"Projectile doesn't apply {effect} effect")
+                        validation["has_errors"] = True
+                        
+            except FileNotFoundError:
+                validation["errors"].append(f"Projectile file not found: {projectile_file}")
+                validation["has_errors"] = True
+            except SyntaxError as e:
+                validation["errors"].append(f"Syntax error in projectile file: {e}")
+                validation["has_errors"] = True
+        
+        # Check 3: Effects exist in Cow class
+        if has_effects:
+            try:
+                from Agent.Tools.read_file import read_file
+                cow_lines = read_file("Game/Character/cow.py", line_count=False)
+                cow_code = "".join(cow_lines) if isinstance(cow_lines, list) else cow_lines
+                
+                for effect in effect_types:
+                    # Check state variable
+                    if f"self.is_{effect}" in cow_code:
+                        validation["checks_passed"].append(f"Cow has is_{effect} state")
+                    else:
+                        validation["errors"].append(f"Cow missing is_{effect} state variable")
+                        validation["has_errors"] = True
+                    
+                    # Check apply method
+                    if f"def apply_{effect}" in cow_code:
+                        validation["checks_passed"].append(f"Cow has apply_{effect} method")
+                    else:
+                        validation["errors"].append(f"Cow missing apply_{effect} method")
+                        validation["has_errors"] = True
+                        
+            except Exception as e:
+                validation["errors"].append(f"Error checking Cow class: {e}")
+                validation["has_errors"] = True
+        
+        # Check 4: Weapon in Arena loot pool
+        try:
+            from Agent.Tools.read_file import read_file
+            arena_lines = read_file("Game/Arena/arena.py", line_count=False)
+            arena_code = "".join(arena_lines) if isinstance(arena_lines, list) else arena_lines
+            
+            if f"create_{weapon_name.lower()}" in arena_code:
+                validation["checks_passed"].append("Weapon in Arena loot pool")
+            else:
+                validation["errors"].append("Weapon not found in Arena loot pool")
+                validation["has_errors"] = True
+                
+        except Exception as e:
+            validation["errors"].append(f"Error checking Arena: {e}")
+            validation["has_errors"] = True
+        
+        # Check 5: Try to actually import and instantiate weapon
+        try:
+            import sys
+            import importlib
+            
+            # Import weapon module
+            weapon_module_name = f"Game.Weapons.{weapon_name.lower()}"
+            if weapon_module_name in sys.modules:
+                importlib.reload(sys.modules[weapon_module_name])
+            weapon_module = importlib.import_module(weapon_module_name)
+            
+            # Try to create weapon
+            create_func = getattr(weapon_module, f"create_{weapon_name.lower()}")
+            weapon = create_func()
+            
+            if weapon:
+                validation["checks_passed"].append("Weapon successfully instantiated")
+            else:
+                validation["errors"].append("Weapon instantiation returned None")
+                validation["has_errors"] = True
+                
+        except ImportError as e:
+            validation["errors"].append(f"Cannot import weapon: {e}")
+            validation["has_errors"] = True
+        except AttributeError as e:
+            validation["errors"].append(f"Missing create function: {e}")
+            validation["has_errors"] = True
+        except Exception as e:
+            validation["errors"].append(f"Error instantiating weapon: {e}")
+            validation["has_errors"] = True
+        
+        return validation
+    
+    def _fix_weapon_issues(self, weapon_plan: dict, validation_results: dict) -> bool:
+        """
+        Attempt to fix issues found during validation.
+        
+        Returns:
+            True if all issues fixed
+        """
+        weapon_name = weapon_plan.get("weapon_name", "CustomWeapon")
+        has_effects = weapon_plan.get("has_effects", False)
+        effect_types = weapon_plan.get("effect_types", [])
+        
+        fixed_count = 0
+        
+        for error in validation_results["errors"]:
+            try:
+                # Handle missing effect methods in Cow
+                if "Cow missing" in error and "apply_" in error:
+                    effect = error.split("apply_")[1].split(" ")[0]
+                    print(f"  Fixing: Adding {effect} to Cow class...")
+                    success = self._add_effects_to_cow([effect])
+                    if success:
+                        fixed_count += 1
+                        print(f"    ✓ Added {effect} effect")
+                
+                # Handle missing effect application in projectile
+                elif "Projectile doesn't apply" in error:
+                    effect = error.split("apply")[1].split("effect")[0].strip()
+                    print(f"  Fixing: Updating projectile to apply {effect}...")
+                    # Recreate projectile with all effects
+                    projectile_file = self._create_effect_projectile(weapon_plan)
+                    if projectile_file:
+                        fixed_count += 1
+                        print(f"    ✓ Updated projectile")
+                
+                # Handle syntax errors
+                elif "Syntax error" in error:
+                    print(f"  ⚠️  Cannot auto-fix syntax error: {error}")
+                
+            except Exception as e:
+                print(f"  ⚠️  Failed to fix '{error}': {e}")
+        
+        print(f"\n  Fixed {fixed_count}/{len(validation_results['errors'])} issues")
+        
+        # Re-validate
+        new_validation = self._validate_weapon_implementation(weapon_plan, {})
+        return not new_validation["has_errors"]
     
     def run(self):
         """Main execution loop for the agent."""
