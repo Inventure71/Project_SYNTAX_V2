@@ -13,7 +13,7 @@ from Agent.Prompts.system_prompts import global_system_prompt
 
 # Import our new modules
 from Agent.Modules.utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, format_file_size
-from Agent.Modules.validation import validate_weapon_implementation, validate_projectile_behavior
+from Agent.Modules.validation import validate_weapon_implementation, validate_projectile_behavior, run_python_syntax_check
 from Agent.Modules.fixing import fix_weapon_issues, fix_simulation_issues
 from Agent.Modules.simulation_testing import run_game_simulation_tests
 
@@ -193,6 +193,7 @@ class AgentMain:
             "files_modified": [],
             "errors": [],
             "weapon_plan": None,
+            "syntax_checks": None,
             "validation": None,
             "simulation_tests": None,
             "final_validation": None
@@ -243,107 +244,149 @@ class AgentMain:
                 results["files_modified"].append("Game/Arena/arena.py")
                 debug_print("  ✓ Added to golden field loot pool", "INFO")
 
-            # Step 7: Validate implementation (basic checks only)
-            debug_print("\n🔍 Validating implementation...", "INFO")
-            validation_results = validate_weapon_implementation(weapon_plan, results)
-            results["validation"] = validation_results
+            # Stage 7: Syntax and static validation
+            debug_print("\n🧪 Running syntax and static validation phase...", "INFO")
 
-            if validation_results["has_errors"]:
-                debug_print(f"  ⚠️  Found {len(validation_results['errors'])} issues:", "WARNING")
-                for error in validation_results['errors']:
+            relevant_files = set()
+            for path_candidate in results.get("files_created", []) + results.get("files_modified", []):
+                if path_candidate:
+                    relevant_files.add(path_candidate)
+            if weapon_file:
+                relevant_files.add(weapon_file)
+            if projectile_file:
+                relevant_files.add(projectile_file)
+
+            relevant_files = sorted(relevant_files)
+
+            max_syntax_attempts = 5
+            syntax_passed = False
+
+            for attempt in range(1, max_syntax_attempts + 1):
+                debug_print(f"\n🧪 Syntax/static check attempt {attempt}/{max_syntax_attempts}", "INFO")
+                syntax_results = run_python_syntax_check(relevant_files)
+                validation_results = validate_weapon_implementation(weapon_plan, results)
+
+                results["syntax_checks"] = syntax_results
+                results["validation"] = validation_results
+
+                combined_errors = []
+                if syntax_results.get("has_errors"):
+                    combined_errors.extend(syntax_results.get("errors", []))
+                if validation_results.get("has_errors"):
+                    combined_errors.extend(validation_results.get("errors", []))
+
+                if not combined_errors:
+                    syntax_passed = True
+                    debug_print("  ✅ Syntax and static validation passed", "INFO")
+                    break
+
+                debug_print(f"  ⚠️  {len(combined_errors)} issues detected during syntax/static validation", "WARNING")
+                for error in combined_errors[:5]:
                     debug_print(f"     - {error}", "WARNING")
 
-                # Attempt to fix issues
-                debug_print("\n🔧 Attempting to fix issues...", "INFO")
-                fix_success = fix_weapon_issues(weapon_plan, validation_results, agent=self)
-                if fix_success:
-                    debug_print("  ✓ Issues fixed!", "INFO")
-                    results["success"] = True
-                else:
-                    debug_print("  ⚠️  Some issues remain", "WARNING")
-                    results["success"] = False
-            else:
-                debug_print("  ✓ All validation checks passed!", "INFO")
-                results["success"] = True
+                fix_success = fix_weapon_issues(
+                    weapon_plan,
+                    {**validation_results, "syntax_errors": syntax_results.get("errors", []), "errors": combined_errors},
+                    agent=self,
+                )
 
-            # Step 8: Game simulation testing (BEFORE comprehensive AI validation)
-            if results["success"]:
-                debug_print("\n🎮 Running game simulation tests...", "INFO")
+                if not fix_success:
+                    debug_print("  ❌ Automatic fix attempt failed for syntax/static issues.", "ERROR")
+                    break
+
+            if not syntax_passed:
+                results["success"] = False
+                results["errors"].append("Syntax/static validation phase failed. Review detected issues.")
+                debug_print("\n❌ Aborting workflow due to unresolved syntax/static issues.", "ERROR")
+                return results
+
+            # Stage 8: Simulation testing (only proceed when syntax passes)
+            debug_print("\n🎮 Running game simulation phase...", "INFO")
+            max_simulation_fix_attempts = 5
+            simulation_passed = False
+
+            for attempt in range(1, max_simulation_fix_attempts + 1):
+                debug_print(f"\n🎮 Simulation attempt {attempt}/{max_simulation_fix_attempts}", "INFO")
                 simulation_results = run_game_simulation_tests(weapon_plan)
                 results["simulation_tests"] = simulation_results
 
-                if simulation_results["has_errors"]:
-                    debug_print(f"  ⚠️  Found {len(simulation_results['errors'])} runtime issues:", "WARNING")
-                    for error in simulation_results["errors"][:3]:
-                        debug_print(f"     - {error}", "WARNING")
-
-                    # Keep trying to fix simulation issues until they're all resolved
-                    max_simulation_fix_attempts = 5
-                    for sim_attempt in range(max_simulation_fix_attempts):
-                        debug_print(f"\n🔧 Fixing runtime issues (attempt {sim_attempt + 1}/{max_simulation_fix_attempts})...", "INFO")
-                        fix_success = fix_simulation_issues(weapon_plan, simulation_results, agent=self)
-
-                        # Re-run simulation to confirm
-                        debug_print("\n🔄 Re-running simulation tests...", "INFO")
-                        retest_results = run_game_simulation_tests(weapon_plan)
-
-                        if not retest_results["has_errors"]:
-                            debug_print("  ✅ All simulation tests passed!", "INFO")
-                            results["success"] = True
-                            break
-                        else:
-                            debug_print(f"  ⚠️  {len(retest_results['errors'])} issues remain", "WARNING")
-                            simulation_results = retest_results  # Update for next attempt
-
-                            if sim_attempt == max_simulation_fix_attempts - 1:
-                                debug_print("  ⚠️  Max simulation fix attempts reached", "WARNING")
-                                debug_print("  💡 Continuing to comprehensive validation...", "INFO")
-                                results["success"] = True  # Continue to next step
-                else:
+                if not simulation_results.get("has_errors"):
                     debug_print("  ✅ All simulation tests passed!", "INFO")
-                    results["success"] = True
+                    simulation_passed = True
+                    break
 
-            # Step 9: Comprehensive AI validation (ONLY AFTER simulation passes)
-            if results["success"] and results.get("simulation_tests", {}).get("has_errors") == False:
-                debug_print("\n🔬 Running comprehensive AI validation and fixing...", "INFO")
-                final_validation = self._comprehensive_ai_validation(weapon_plan, results)
+                debug_print(f"  ⚠️  {len(simulation_results.get('errors', []))} runtime issues detected", "WARNING")
+                for error in simulation_results.get("errors", [])[:3]:
+                    debug_print(f"     - {error}", "WARNING")
 
-                if final_validation["all_checks_passed"]:
-                    debug_print("  ✅ All validation and integration checks passed!", "INFO")
-                    results["success"] = True
-                else:
-                    debug_print(f"  ⚠️  Final validation found {len(final_validation['remaining_issues'])} issues", "WARNING")
-                    for issue in final_validation['remaining_issues'][:3]:
-                        debug_print(f"     - {issue}", "WARNING")
+                fix_success = fix_simulation_issues(weapon_plan, simulation_results, agent=self)
+                if not fix_success:
+                    debug_print("  ❌ Automatic fix attempt failed for simulation issues.", "ERROR")
+                    break
 
-                    if len(final_validation['remaining_issues']) > 3:
-                        debug_print(f"     ... and {len(final_validation['remaining_issues']) - 3} more issues", "WARNING")
+                debug_print("\n🔄 Re-running simulation tests after fixes...", "INFO")
+                simulation_results = run_game_simulation_tests(weapon_plan)
+                results["simulation_tests"] = simulation_results
 
-                    # Keep trying to fix until everything works
-                    max_fix_attempts = 10
-                    attempt = 0
-                    while attempt < max_fix_attempts:
-                        attempt += 1
-                        debug_print(f"\n🔧 Fix attempt {attempt}/{max_fix_attempts}...", "INFO")
+                if not simulation_results.get("has_errors"):
+                    debug_print("  ✅ All simulation tests passed!", "INFO")
+                    simulation_passed = True
+                    break
 
-                        fix_result = self._comprehensive_ai_fixing(weapon_plan, final_validation['remaining_issues'])
+            if not simulation_passed:
+                results["success"] = False
+                results["errors"].append("Simulation phase failed. Review detected runtime issues.")
+                debug_print("\n❌ Aborting workflow due to unresolved simulation issues.", "ERROR")
+                return results
 
-                        if fix_result["all_fixed"]:
-                            debug_print("  ✅ All issues fixed!", "INFO")
-                            results["success"] = True
-                            break
-                        else:
-                            debug_print(f"  ⚠️  {len(fix_result['remaining_issues'])} issues still remain", "WARNING")
-                            final_validation['remaining_issues'] = fix_result['remaining_issues']
+            # Stage 9: Comprehensive AI validation (only after simulation succeeds)
+            previous_file_map = self._build_previous_file_map(backup_id, relevant_files)
+            debug_print("\n🔬 Running comprehensive AI validation phase...", "INFO")
+            max_final_attempts = 10
+            final_passed = False
+            final_validation = None
 
-                            if attempt == max_fix_attempts:
-                                debug_print("  ⚠️  Max attempts reached", "WARNING")
-                                debug_print("  💡 Manual review may be needed", "INFO")
-                                results["success"] = True  # Mark as complete anyway
+            for attempt in range(1, max_final_attempts + 1):
+                debug_print(f"\n🔬 Validation attempt {attempt}/{max_final_attempts}", "INFO")
+                final_validation = self._comprehensive_ai_validation(
+                    weapon_plan,
+                    results,
+                    previous_file_map=previous_file_map,
+                )
 
                 results["final_validation"] = final_validation
-            else:
-                debug_print("\n⏭️  Skipping comprehensive validation (simulation tests must pass first)", "INFO")
+
+                if final_validation.get("all_checks_passed"):
+                    debug_print("  ✅ Comprehensive validation passed!", "INFO")
+                    final_passed = True
+                    break
+
+                remaining_issues = final_validation.get("remaining_issues", [])
+                debug_print(f"  ⚠️  {len(remaining_issues)} issues found during comprehensive validation", "WARNING")
+                for issue in remaining_issues[:5]:
+                    debug_print(f"     - {issue}", "WARNING")
+
+                fix_result = self._comprehensive_ai_fixing(
+                    weapon_plan,
+                    remaining_issues,
+                    previous_file_map=previous_file_map,
+                )
+
+                if not fix_result.get("all_fixed"):
+                    final_validation["remaining_issues"] = fix_result.get("remaining_issues", remaining_issues)
+                    debug_print("  ❌ Comprehensive fix attempt did not resolve all issues.", "ERROR")
+                    if attempt == max_final_attempts:
+                        break
+                else:
+                    debug_print("  🔄 Re-running comprehensive validation after fixes...", "INFO")
+
+            if not final_passed:
+                results["success"] = False
+                results["errors"].append("Comprehensive AI validation failed after automatic fixes.")
+                debug_print("\n❌ Aborting workflow due to unresolved comprehensive validation issues.", "ERROR")
+                return results
+
+            results["success"] = True
 
         except Exception as e:
             debug_print(f"\n❌ Workflow failed: {e}", "ERROR")
@@ -362,6 +405,23 @@ class AgentMain:
             results["files_created"] = []
         
         return results
+
+    def _build_previous_file_map(self, backup_id: str, files: List[str]) -> Dict[str, str]:
+        """Map current file paths to their backup counterparts."""
+        if not backup_id:
+            return {}
+
+        previous_map: Dict[str, str] = {}
+        backup_root = os.path.join(self.backup_dir, backup_id)
+
+        for rel_path in files:
+            if not rel_path:
+                continue
+            previous_path = os.path.join(backup_root, rel_path)
+            if os.path.exists(previous_path):
+                previous_map[rel_path] = previous_path
+
+        return previous_map
 
     def _analyze_weapon_requirements(self, weapon_description: str) -> Dict[str, Any]:
         """Analyze weapon requirements and create a plan using AI."""
@@ -388,11 +448,11 @@ Create a weapon plan with the following structure:
 Return ONLY valid JSON, no other text."""
 
         try:
-            response = self.active_client.ask(
+            response = self.active_client.ask_with_tools(
                 prompt=analysis_prompt,
                 system_prompt=self._combine_system_prompts("You are a game design expert. Analyze weapon requests and create balanced, fun weapon plans.")
             )
-            
+
             weapon_plan = extract_json_from_text(response)
             if not weapon_plan:
                 weapon_plan = {
@@ -610,17 +670,31 @@ Weapon to add: {weapon_class_name} from Game.Weapons.{weapon_class_name.lower()}
             debug_print(f"Error adding weapon to loot pool: {e}", "ERROR")
             return False
 
-    def _comprehensive_ai_validation(self, weapon_plan: Dict[str, Any], results: Dict[str, Any]) -> Dict[str, Any]:
+    def _comprehensive_ai_validation(self, weapon_plan: Dict[str, Any], results: Dict[str, Any], previous_file_map: Dict[str, str] = None) -> Dict[str, Any]:
         """Run comprehensive AI validation."""
         debug_print("🤖 AI analyzing all code for potential issues...", "INFO")
-        
+
         if not self._check_request_limit():
             return {"all_checks_passed": False, "remaining_issues": ["Request limit reached"]}
-        
+
+        previous_file_map = previous_file_map or {}
+
         weapon_class_name = weapon_plan.get("weapon_class_name", "CustomWeapon")
         weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
         projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
-        
+
+        current_files = set(results.get("files_created", [])) | set(results.get("files_modified", []))
+        if weapon_file:
+            current_files.add(weapon_file)
+        if os.path.exists(projectile_file):
+            current_files.add(projectile_file)
+        current_files = sorted(path for path in current_files if path)
+
+        if previous_file_map:
+            backup_summary = "\n".join(f"{path} -> {backup_path}" for path, backup_path in previous_file_map.items())
+        else:
+            backup_summary = "No backup snapshots available for comparison."
+
         prompt = f"""Thoroughly validate the weapon implementation:
 
 WEAPON PLAN:
@@ -629,12 +703,18 @@ WEAPON PLAN:
 FILES CREATED:
 {json.dumps(results.get('files_created', []), indent=2)}
 
-Read all files and check:
-1. Correct imports
+CURRENT FILES TO REVIEW:
+{json.dumps(current_files, indent=2)}
+
+BACKUP SNAPSHOTS:
+{backup_summary}
+
+Read both the current files and any provided backup versions (use read_file on the backup paths) and check:
+1. Correct imports and dependencies
 2. Proper method signatures
 3. Image references use placeholder.png
-4. No syntax errors
-5. Follows game patterns
+4. No syntax errors or runtime regressions
+5. Behaviours remain consistent with previous implementation unless intentionally changed
 
 Report any issues found."""
 
@@ -644,7 +724,7 @@ Report any issues found."""
                 prompt=prompt,
                 system_prompt=self._combine_system_prompts(system_prompt_comprehensive_validation)
             )
-            
+
             if "PASSED" in response or "all validation checks" in response.lower():
                 return {"all_checks_passed": True, "remaining_issues": []}
             else:
@@ -654,13 +734,19 @@ Report any issues found."""
             debug_print(f"Error in comprehensive validation: {e}", "ERROR")
             return {"all_checks_passed": False, "remaining_issues": [str(e)]}
 
-    def _comprehensive_ai_fixing(self, weapon_plan: Dict[str, Any], issues: List[str]) -> Dict[str, Any]:
+    def _comprehensive_ai_fixing(self, weapon_plan: Dict[str, Any], issues: List[str], previous_file_map: Dict[str, str] = None) -> Dict[str, Any]:
         """Run comprehensive AI fixing."""
         debug_print("🤖 AI fixing issues...", "INFO")
-        
+
         if not self._check_request_limit():
             return {"all_fixed": False, "remaining_issues": issues}
-        
+
+        previous_file_map = previous_file_map or {}
+        if previous_file_map:
+            backup_summary = "\n".join(f"{path} -> {backup_path}" for path, backup_path in previous_file_map.items())
+        else:
+            backup_summary = "No backup snapshots available for comparison."
+
         prompt = f"""Fix these issues in the weapon implementation:
 
 WEAPON PLAN:
@@ -669,7 +755,10 @@ WEAPON PLAN:
 ISSUES TO FIX:
 {chr(10).join(f"{i+1}. {issue}" for i, issue in enumerate(issues))}
 
-Use read_file and write_into_file to fix each issue."""
+BACKUP SNAPSHOTS:
+{backup_summary}
+
+Use read_file and write_into_file to fix each issue. When a backup path is provided, compare the backup and current versions before applying changes to avoid regressions."""
 
         try:
             from Agent.Prompts.system_prompts import system_prompt_comprehensive_fixing
@@ -681,3 +770,4 @@ Use read_file and write_into_file to fix each issue."""
         except Exception as e:
             debug_print(f"Error in comprehensive fixing: {e}", "ERROR")
             return {"all_fixed": False, "remaining_issues": issues}
+

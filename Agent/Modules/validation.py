@@ -3,6 +3,7 @@ Validation logic for the agent system.
 """
 import os
 import re
+import py_compile
 from typing import Dict, List, Any, Tuple
 
 from .utils import debug_print, safe_read_file, validate_method_signature
@@ -44,6 +45,42 @@ def check_formatting_issues(code: str, filename: str) -> List[str]:
                 issues.append(f"{filename}:{line_num} - {description}")
     
     return issues
+
+
+def run_python_syntax_check(file_paths: List[str]) -> Dict[str, Any]:
+    """
+    Compile Python files to detect syntax errors before runtime.
+    """
+    results = {
+        "files_checked": [],
+        "errors": [],
+        "has_errors": False
+    }
+
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            debug_print(f"Skipping syntax check for missing file: {file_path}", "DEBUG")
+            continue
+
+        results["files_checked"].append(file_path)
+        try:
+            py_compile.compile(file_path, doraise=True)
+            debug_print(f"✅ Syntax check passed: {file_path}", "DEBUG")
+        except py_compile.PyCompileError as e:
+            results["has_errors"] = True
+            line_info = getattr(e, 'lineno', '?')
+            message = f"{file_path}:{line_info} - {e.msg}"
+            results["errors"].append(message)
+            debug_print(f"❌ Syntax error detected: {message}", "ERROR")
+        except Exception as e:
+            results["has_errors"] = True
+            message = f"{file_path} - {e}"
+            results["errors"].append(message)
+            debug_print(f"❌ Unexpected syntax check failure: {message}", "ERROR")
+
+    return results
+
+
 
 
 def check_factory_function(weapon_file: str, weapon_class_name: str) -> Tuple[bool, str]:

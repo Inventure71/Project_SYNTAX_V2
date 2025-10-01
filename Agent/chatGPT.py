@@ -39,6 +39,29 @@ class ChatGPT:
         
         return response
 
+    def ask_with_tools(self, prompt: str, system_prompt: str, use_history: bool = False, save_in_history: bool = True, tools: list[str] = None, max_iterations: int = 10) -> str:
+        if use_history:
+            conversation = [message.copy() if isinstance(message, dict) else message for message in self.history]
+        else:
+            conversation = []
+
+        conversation.append({"role": "user", "content": prompt})
+
+        response = self.get_response_with_tools(
+            input_data=[message.copy() if isinstance(message, dict) else message for message in conversation],
+            system_prompt=system_prompt,
+            tools=tools,
+        )
+
+        if save_in_history:
+            if use_history:
+                self.history = conversation + [{"role": "assistant", "content": response}]
+            else:
+                self.history.append({"role": "user", "content": prompt})
+                self.history.append({"role": "assistant", "content": response})
+
+        return response
+
     def get_response(self, input: str, system_prompt: str, tools: list[str] = None) -> str:
         if self.gpt_5_settings:
             reasoning = {
@@ -61,7 +84,7 @@ class ChatGPT:
         )
         return response.output_text
 
-    def get_response_with_tools(self, input: str, system_prompt: str, tools: list[str] = None) -> str:
+    def get_response_with_tools(self, input_data, system_prompt: str, tools: list[str] = None) -> str:
         if tools is None:
             log.debug("# No tools provided, using default tools %s", self.tools)
             tools = self.tools
@@ -77,10 +100,17 @@ class ChatGPT:
             reasoning = None
             verbosity = None
 
+        if isinstance(input_data, list):
+            input_list = []
+            for item in input_data:
+                if isinstance(item, dict):
+                    input_list.append(item.copy())
+                else:
+                    input_list.append(item)
+        else:
+            input_list = [{"role": "user", "content": input_data}]
+
         # Create a running input list we will add to over time
-        input_list = [
-            {"role": "user", "content": input}
-        ]
 
         while True:
             # 2. Prompt the model with tools defined

@@ -12,12 +12,20 @@ from .utils import debug_print, safe_read_file, safe_write_file, extract_json_fr
 def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str, Any], agent=None) -> bool:
     """Fix issues discovered during validation."""
     debug_print("🔧 Starting to fix weapon issues", "INFO")
-    debug_print(f"Found {len(validation_results['errors'])} errors to fix", "INFO")
 
-    if not validation_results["errors"]:
+    validation_errors = list(validation_results.get("errors", []))
+    syntax_errors = list(validation_results.get("syntax_errors", []))
+    combined_errors = validation_errors + syntax_errors
+
+    debug_print(
+        f"Found {len(combined_errors)} issues to fix (validation: {len(validation_errors)}, syntax: {len(syntax_errors)})",
+        "INFO"
+    )
+
+    if not combined_errors:
         debug_print("✅ No errors to fix", "INFO")
         return True
-    
+
     if agent is None:
         debug_print("❌ No agent provided, cannot perform AI fixes", "ERROR")
         return False
@@ -26,7 +34,12 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
     weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
 
     # Collect all error information for context
-    error_context = "\n".join(validation_results["errors"])
+    context_sections: List[str] = []
+    if validation_errors:
+        context_sections.append("VALIDATION ISSUES:\n" + "\n".join(validation_errors))
+    if syntax_errors:
+        context_sections.append("SYNTAX ERRORS:\n" + "\n".join(syntax_errors))
+    error_context = "\n\n".join(context_sections)
     debug_print(f"Error context: {error_context}", "DEBUG")
 
     # Read relevant files for context
@@ -40,8 +53,8 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
         with open(weapon_file, 'r') as f:
             code_context += f"```python\n{f.read()}\n```\n\n"
         debug_print(f"✅ Read weapon file: {weapon_file}", "DEBUG")
-    except:
-        debug_print(f"❌ Could not read weapon file: {weapon_file}", "ERROR")
+    except Exception as exc:
+        debug_print(f"❌ Could not read weapon file: {weapon_file} ({exc})", "ERROR")
 
     if os.path.exists(projectile_file):
         code_context += "## PROJECTILE FILE\n"
@@ -49,23 +62,20 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
             with open(projectile_file, 'r') as f:
                 code_context += f"```python\n{f.read()}\n```\n\n"
             debug_print(f"✅ Read projectile file: {projectile_file}", "DEBUG")
-        except:
-            debug_print(f"❌ Could not read projectile file: {projectile_file}", "ERROR")
+        except Exception as exc:
+            debug_print(f"❌ Could not read projectile file: {projectile_file} ({exc})", "ERROR")
 
     # Read relevant parts of Cow class (effect methods)
     code_context += "## COW CLASS (Effects Section)\n"
     try:
         with open(cow_file, 'r') as f:
             cow_content = f.read()
-            # Extract effect-related methods
             effect_methods = []
             for effect in weapon_plan.get("effects", []):
                 effect_name = effect.replace("projectile_behavior_", "").replace("impact_", "")
                 if f"apply_{effect_name}" in cow_content:
-                    # Find and extract the method
                     method_start = cow_content.find(f"def apply_{effect_name}")
                     if method_start != -1:
-                        # Find end of method (next def or end of file)
                         method_end = cow_content.find("\n    def ", method_start + 1)
                         if method_end == -1:
                             method_end = len(cow_content)
@@ -74,8 +84,8 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
             if effect_methods:
                 code_context += "```python\n" + "\n\n".join(effect_methods) + "\n```\n\n"
         debug_print(f"✅ Read Cow class effect methods", "DEBUG")
-    except:
-        debug_print(f"❌ Could not read Cow class", "ERROR")
+    except Exception as exc:
+        debug_print(f"❌ Could not read Cow class ({exc})", "ERROR")
 
     # Create comprehensive system prompt for fixing
     system_prompt = """You are a senior debugging and code-fixing specialist for the SYNTAX V2 game project.
@@ -150,12 +160,12 @@ def update(self):
 """
 
     # Create the fix prompt
-    fix_prompt = f"""Fix the validation errors found in the weapon implementation.
+    fix_prompt = f"""Fix the issues found in the weapon implementation.
 
 ## WEAPON PLAN
 {json.dumps(weapon_plan, indent=2)}
 
-## VALIDATION ERRORS
+## DETECTED ISSUES
 {error_context}
 
 ## CURRENT CODE
@@ -163,33 +173,30 @@ def update(self):
 
 ## YOUR TASK
 
-1. Read the weapon file and projectile file to understand current implementation
-2. Identify the root cause of each validation error
-3. Fix the issues using the available tools (read_file, write_into_file, write_over_file)
-4. Focus on:
+1. Resolve any syntax failures first so every Python file compiles without errors.
+2. Read the weapon and projectile files to understand the current implementation.
+3. Identify the root cause of each remaining validation error.
+4. Fix the issues using the available tools (read_file, write_into_file, write_over_file).
+5. Focus on:
    - Correct method signatures
    - Proper parameter passing
    - Missing imports or methods
    - Correct image usage
    - Effect implementation
 
-Fix all validation errors to ensure the weapon implementation is correct."""
+Do not move on until every issue above is resolved."""
 
     debug_print("🤖 Using AI agent to fix validation issues", "INFO")
 
-    # Use the agent's AI client to fix issues WITH TOOLS
     try:
-        # Combine system prompt with agent's global prompt
         combined_prompt = agent._combine_system_prompts(system_prompt)
-        
-        # Call AI to fix issues - MUST use ask_with_tools so AI can actually make changes!
         debug_print("📞 Calling AI to analyze and fix validation errors...", "INFO")
         response = agent.active_client.ask_with_tools(
             prompt=fix_prompt,
             system_prompt=combined_prompt
         )
-        
-        debug_print(f"✅ AI completed fixing process", "INFO")
+
+        debug_print("✅ AI completed fixing process", "INFO")
         debug_print(f"AI response summary: {response[:200] if response else 'No text response'}...", "DEBUG")
         return True
 
