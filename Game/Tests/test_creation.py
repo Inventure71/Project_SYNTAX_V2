@@ -8,6 +8,19 @@ This script supports:
 - Listing backups
 """
 
+import os
+import sys
+
+# Ensure project root is on sys.path so `Agent` can be imported
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Ensure working directory is project root for consistent relative paths
+if os.getcwd() != PROJECT_ROOT:
+    os.chdir(PROJECT_ROOT)
+
 from Agent.agent_main import AgentMain
 
 
