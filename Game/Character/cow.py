@@ -282,11 +282,8 @@ class Cow:
         return True
 
     def set_eating_intent(self, active:
-    def set_eating_intent(self, active:
         bool):
-            self._is_eating = False
-        else:
-            self._is_eating = bool(active)
+        self._is_eating = bool(active)
 
 
     def set_aim_direction(self, direction:
@@ -352,14 +349,14 @@ class Cow:
     def take_damage(self, amount:
         float):
         new_hp = max(0, int(self.health - float(amount)))
-    def take_damage(self, amount:
-        float):
+        self.health = new_hp
+
     def heal(self, amount:
         float):
         new_hp = min(self.max_health, int(self.health + float(amount)))
         self.health = new_hp
-    def heal(self, amount:
-        float):
+
+    def is_dead(self) -> bool:
         """Check if the cow is dead."""
         return self.health <= 0
 

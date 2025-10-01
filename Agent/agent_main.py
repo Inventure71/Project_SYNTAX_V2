@@ -56,6 +56,9 @@ class AgentMain:
 
         self.backup_dir = "Backup/Agent_Backups"
         self.current_backup_id = None
+        self.current_plan = []
+        self.current_phase = ""
+        self.conversation_history: List[Dict[str, str]] = []
 
         self.update_project_structure()
         debug_print("✅ Agent initialized successfully", "INFO")
@@ -71,6 +74,84 @@ class AgentMain:
     def _combine_system_prompts(self, specific_prompt: str) -> str:
         """Combine global system prompt with specific prompt."""
         return f"{global_system_prompt}\n\n{'='*70}\n# SPECIFIC TASK INSTRUCTIONS\n{'='*70}\n\n{specific_prompt}"
+
+    def _log_phase(self, phase_name: str, plan_steps: List[str]) -> None:
+        self.current_phase = phase_name
+        self.current_plan = plan_steps
+        debug_print("".join([
+            "\n🧭 Current Phase: ", phase_name,
+            "\nPlan Steps:",
+            *[f"\n  {idx + 1}. {step}" for idx, step in enumerate(plan_steps)],
+            "\n"
+        ]), "DEBUG")
+
+    def _reset_conversation_history(self) -> None:
+        self.conversation_history = []
+        self.current_phase = ""
+        self.current_plan = []
+        if hasattr(self.active_client, "clear_history"):
+            try:
+                self.active_client.clear_history()
+            except Exception as exc:
+                debug_print(f"⚠️  Unable to clear model history: {exc}", "WARNING")
+        debug_print("🧠 Conversation memory reset", "DEBUG")
+
+    def _record_memory(self, role: str, content: str) -> None:
+        self.conversation_history.append({"role": role, "content": content})
+
+    def _debug_memory_snapshot(self) -> None:
+        exchanges = len(self.conversation_history) // 2
+        debug_print(f"🧠 Memory exchanges recorded: {exchanges}", "DEBUG")
+        if self.conversation_history and self.conversation_history[-1]["role"] == "assistant":
+            preview = self.conversation_history[-1]["content"]
+            preview = preview.replace('\n', ' ')
+            if len(preview) > 140:
+                preview = preview[:137] + "..."
+            debug_print(f"   Last reply snapshot: {preview}", "DEBUG")
+
+    def dump_conversation_history(self) -> None:
+        debug_print("\n===== CONVERSATION HISTORY DUMP =====", "DEBUG")
+        for idx, entry in enumerate(self.conversation_history):
+            header = f"{idx + 1:02d}. {entry['role'].upper()}"
+            debug_print(f"{header}: {entry['content']}", "DEBUG")
+        debug_print("===== END OF CONVERSATION HISTORY =====\n", "DEBUG")
+
+    def chat(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        self._record_memory("user", prompt)
+        try:
+            response = self.active_client.ask(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                use_history=True,
+                save_in_history=True,
+                **kwargs
+            )
+        except Exception:
+            # remove last recorded prompt before re-raising so history stays consistent
+            self.conversation_history.pop()
+            raise
+
+        self._record_memory("assistant", response or "")
+        self._debug_memory_snapshot()
+        return response
+
+    def chat_with_tools(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+        self._record_memory("user", prompt)
+        try:
+            response = self.active_client.ask_with_tools(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                use_history=True,
+                save_in_history=True,
+                **kwargs
+            )
+        except Exception:
+            self.conversation_history.pop()
+            raise
+
+        self._record_memory("assistant", response or "")
+        self._debug_memory_snapshot()
+        return response
 
     def _check_request_limit(self) -> bool:
         """Check if we've hit the request limit."""
@@ -195,8 +276,12 @@ class AgentMain:
         debug_print("🎮 SYNTAX V2 - WEAPON CREATION WORKFLOW", "INFO")
         debug_print("="*70, "INFO")
 
+        self._reset_conversation_history()
+
         results = {
             "success": False,
+            "phase": "initialization",
+            "plan": [],
             "files_created": [],
             "files_modified": [],
             "errors": [],
@@ -212,11 +297,20 @@ class AgentMain:
 
             # Step 1: Create backup
             debug_print("\n💾 Creating backup...", "INFO")
+            self._log_phase("create_backup", ["Snapshot key files before making changes."])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             backup_id = self._create_backup("weapon_creation")
             results["backup_id"] = backup_id
 
             # Step 2: Analyze weapon requirements
             debug_print("\n📋 Analyzing weapon requirements...", "INFO")
+            self._log_phase("analyze_requirements", [
+                "Gather high level weapon plan",
+                "Extract normalized effects",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             weapon_plan = self._analyze_weapon_requirements(weapon_description)
             results["weapon_plan"] = weapon_plan
 
@@ -226,6 +320,12 @@ class AgentMain:
             # Step 3: Modify Cow class for character effects
             if weapon_plan.get("effects"):
                 debug_print(f"\n🔧 Modifying Cow class for effects: {weapon_plan.get('effects', [])}", "INFO")
+                self._log_phase("update_cow_effects", [
+                    "Inspect Cow class",
+                    "Add state flags and apply_ methods",
+                ])
+                results["phase"] = self.current_phase
+                results["plan"] = list(self.current_plan)
                 cow_modified = self._modify_cow_class_for_effects(weapon_plan)
                 if cow_modified:
                     results["files_modified"].append("Game/Character/cow.py")
@@ -233,6 +333,13 @@ class AgentMain:
 
             # Step 4: Create weapon file
             debug_print("\n🔨 Creating weapon file...", "INFO")
+            self._log_phase("create_weapon_file", [
+                "Read weapon base class",
+                "Generate weapon implementation with description",
+                "Ensure factory function exists",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             weapon_file = self._create_weapon_file_with_effects(weapon_plan)
             if weapon_file:
                 results["files_created"].append(weapon_file)
@@ -240,6 +347,13 @@ class AgentMain:
 
             # Step 5: Create projectile (always needed, even without special effects)
             debug_print("\n✨ Creating projectile...", "INFO")
+            self._log_phase("create_projectile_file", [
+                "Review projectile patterns",
+                "Implement custom behaviour",
+                "Verify signatures",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             projectile_file = self._create_effect_projectile(weapon_plan)
             if projectile_file:
                 results["files_created"].append(projectile_file)
@@ -247,6 +361,12 @@ class AgentMain:
 
             # Step 6: Add weapon to loot pool
             debug_print("\n🎮 Adding weapon to game loot pool...", "INFO")
+            self._log_phase("update_loot_pool", [
+                "Register weapon import",
+                "Append weapon to loot list",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             arena_modified = self._add_weapon_to_loot_pool(weapon_plan)
             if arena_modified:
                 results["files_modified"].append("Game/Arena/arena.py")
@@ -254,6 +374,13 @@ class AgentMain:
 
             # Stage 7: Syntax and static validation
             debug_print("\n🧪 Running syntax and static validation phase...", "INFO")
+            self._log_phase("syntax_validation", [
+                "Compile python files",
+                "Run static weapon/projectile checks",
+                "Fix detected issues",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
 
             effect_infos = normalize_effects(weapon_plan.get("effects", []))
 
@@ -314,6 +441,12 @@ class AgentMain:
 
             # Stage 8: Simulation testing (only proceed when syntax passes)
             debug_print("\n🎮 Running game simulation phase...", "INFO")
+            self._log_phase("simulation", [
+                "Run pickup/ammo/projectile tests",
+                "Fix runtime errors",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             max_simulation_fix_attempts = 5
             simulation_passed = False
 
@@ -354,6 +487,12 @@ class AgentMain:
             # Stage 9: Comprehensive AI validation (only after simulation succeeds)
             previous_file_map = self._build_previous_file_map(backup_id, relevant_files)
             debug_print("\n🔬 Running comprehensive AI validation phase...", "INFO")
+            self._log_phase("comprehensive_validation", [
+                "Run final AI review",
+                "Resolve lingering issues",
+            ])
+            results["phase"] = self.current_phase
+            results["plan"] = list(self.current_plan)
             max_final_attempts = 10
             final_passed = False
             final_validation = None
@@ -405,6 +544,7 @@ class AgentMain:
             results["errors"].append(str(e))
             import traceback
             traceback.print_exc()
+            self.dump_conversation_history()
 
         debug_print("\n" + "="*60, "INFO")
         
@@ -415,6 +555,11 @@ class AgentMain:
             results["backup_id"] = backup_id if backup_id else "N/A"
         if "files_created" not in results:
             results["files_created"] = []
+
+        results["phase"] = self.current_phase
+        results["plan"] = list(self.current_plan)
+
+        debug_print("🧠 Conversation memory captured (run agent.dump_conversation_history() for full trace)", "DEBUG")
         
         return results
 
@@ -460,9 +605,10 @@ Create a weapon plan with the following structure:
 Return ONLY valid JSON, no other text."""
 
         try:
-            response = self.active_client.ask_with_tools(
+            response = self.chat_with_tools(
                 prompt=analysis_prompt,
-                system_prompt=self._combine_system_prompts("You are a game design expert. Analyze weapon requests and create balanced, fun weapon plans.")
+                system_prompt=self._combine_system_prompts("You are a game design expert. Analyze weapon requests and create balanced, fun weapon plans."),
+                max_iterations=15
             )
 
             weapon_plan = extract_json_from_text(response)
@@ -526,9 +672,10 @@ Requirements:
 Use read_file and write_into_file tools for every change."""
 
         try:
-            self.active_client.ask_with_tools(
+            self.chat_with_tools(
                 prompt=prompt,
-                system_prompt=self._combine_system_prompts(global_system_prompt)
+                system_prompt=self._combine_system_prompts(global_system_prompt),
+                max_iterations=15
             )
             cow_file = "Game/Character/cow.py"
             if os.path.exists(cow_file):
@@ -584,9 +731,10 @@ REQUIREMENTS:
 Use read_file to see examples, then write_over_file to create the new weapon."""
 
         try:
-            self.active_client.ask_with_tools(
+            self.chat_with_tools(
                 prompt=prompt,
-                system_prompt=self._combine_system_prompts(global_system_prompt)
+                system_prompt=self._combine_system_prompts(global_system_prompt),
+                max_iterations=15
             )
             
             # Post-process: Fix any same-line issues
@@ -641,9 +789,10 @@ REQUIREMENTS:
 Use read_file to see examples, then write_over_file to create the new projectile."""
 
         try:
-            self.active_client.ask_with_tools(
+            self.chat_with_tools(
                 prompt=prompt,
-                system_prompt=self._combine_system_prompts(global_system_prompt)
+                system_prompt=self._combine_system_prompts(global_system_prompt),
+                max_iterations=15
             )
             
             # Post-process: Fix any same-line issues
@@ -701,9 +850,10 @@ self.objects.append(pickup)
 Weapon to add: {weapon_class_name} from Game.Weapons.{weapon_class_name.lower()}"""
 
         try:
-            self.active_client.ask_with_tools(
+            self.chat_with_tools(
                 prompt=prompt,
-                system_prompt=self._combine_system_prompts(global_system_prompt)
+                system_prompt=self._combine_system_prompts(global_system_prompt),
+                max_iterations=15
             )
             
             # Post-process: Fix any same-line issues
@@ -772,9 +922,10 @@ Report any issues found."""
 
         try:
             from Agent.Prompts.system_prompts import system_prompt_comprehensive_validation
-            response = self.active_client.ask_with_tools(
+            response = self.chat_with_tools(
                 prompt=prompt,
-                system_prompt=self._combine_system_prompts(system_prompt_comprehensive_validation)
+                system_prompt=self._combine_system_prompts(system_prompt_comprehensive_validation),
+                max_iterations=15
             )
 
             if "PASSED" in response or "all validation checks" in response.lower():
@@ -814,9 +965,10 @@ Use read_file and write_into_file to fix each issue. When a backup path is provi
 
         try:
             from Agent.Prompts.system_prompts import system_prompt_comprehensive_fixing
-            self.active_client.ask_with_tools(
+            self.chat_with_tools(
                 prompt=prompt,
-                system_prompt=self._combine_system_prompts(system_prompt_comprehensive_fixing)
+                system_prompt=self._combine_system_prompts(system_prompt_comprehensive_fixing),
+                max_iterations=15
             )
             return {"all_fixed": True, "remaining_issues": []}
         except Exception as e:

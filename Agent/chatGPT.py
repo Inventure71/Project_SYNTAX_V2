@@ -158,4 +158,7 @@ class ChatGPT:
 
         return response.output_text
 
+    def clear_history(self):
+        self.history = []
+
     

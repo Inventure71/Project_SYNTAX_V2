@@ -218,7 +218,7 @@ Do not move on until every issue above is resolved."""
         combined_prompt = agent._combine_system_prompts(system_prompt)
         debug_print("📞 Calling AI to analyze and fix validation errors...", "INFO")
         debug_print("🛠️  Invoking ask_with_tools for validation fixes", "DEBUG")
-        response = agent.active_client.ask_with_tools(
+        response = agent.chat_with_tools(
             prompt=fix_prompt,
             system_prompt=combined_prompt,
             max_iterations=15
@@ -432,7 +432,7 @@ Fix all issues to ensure the weapon works in all test scenarios."""
         # Call AI to fix issues - MUST use ask_with_tools so AI can actually make changes!
         debug_print("📞 Calling AI to analyze and fix simulation errors...", "INFO")
         debug_print("🛠️  Invoking ask_with_tools for simulation fixes", "DEBUG")
-        response = agent.active_client.ask_with_tools(
+        response = agent.chat_with_tools(
             prompt=prompt,
             system_prompt=combined_prompt,
             max_iterations=15
