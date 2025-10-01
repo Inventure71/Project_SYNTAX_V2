@@ -19,6 +19,7 @@ from Agent.Modules.utils import (
     extract_json_from_text,
     format_file_size,
     normalize_effects,
+    fix_same_line_statements,
 )
 from Agent.Modules.validation import validate_weapon_implementation, validate_projectile_behavior, run_python_syntax_check
 from Agent.Modules.fixing import fix_weapon_issues, fix_simulation_issues
@@ -529,6 +530,14 @@ Use read_file and write_into_file tools for every change."""
                 prompt=prompt,
                 system_prompt=self._combine_system_prompts(global_system_prompt)
             )
+            cow_file = "Game/Character/cow.py"
+            if os.path.exists(cow_file):
+                content, success = safe_read_file(cow_file)
+                if success:
+                    fixed_content = fix_same_line_statements(content)
+                    if fixed_content != content:
+                        debug_print("🧹 Auto-formatting Cow class to remove inline statements", "DEBUG")
+                        safe_write_file(cow_file, fixed_content)
             return True
         except Exception as e:
             debug_print(f"Error modifying Cow class: {e}", "ERROR")

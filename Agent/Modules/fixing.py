@@ -6,7 +6,7 @@ import json
 import re
 from typing import Dict, List, Any
 
-from .utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, normalize_effects
+from .utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, normalize_effects, fix_same_line_statements
 
 
 def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str, Any], agent=None) -> bool:
@@ -239,6 +239,20 @@ Do not move on until every issue above is resolved."""
                     changed_files.append(path)
 
         if changed_files:
+            formatted_files = []
+            for path in sorted(changed_files):
+                if path.endswith('.py') and os.path.exists(path):
+                    content, success = safe_read_file(path)
+                    if success:
+                        fixed_content = fix_same_line_statements(content)
+                        if fixed_content != content:
+                            safe_write_file(path, fixed_content)
+                            formatted_files.append(path)
+            if formatted_files:
+                debug_print(
+                    f"🧹 Auto-formatted inline statements in: {', '.join(formatted_files)}",
+                    "DEBUG"
+                )
             debug_print(
                 f"📝 Files updated by fix pass: {', '.join(sorted(changed_files))}",
                 "DEBUG"
@@ -439,6 +453,20 @@ Fix all issues to ensure the weapon works in all test scenarios."""
                     changed_files.append(path)
 
         if changed_files:
+            formatted_files = []
+            for path in sorted(changed_files):
+                if path.endswith('.py') and os.path.exists(path):
+                    content, success = safe_read_file(path)
+                    if success:
+                        fixed_content = fix_same_line_statements(content)
+                        if fixed_content != content:
+                            safe_write_file(path, fixed_content)
+                            formatted_files.append(path)
+            if formatted_files:
+                debug_print(
+                    f"🧹 Auto-formatted inline statements in: {', '.join(formatted_files)}",
+                    "DEBUG"
+                )
             debug_print(
                 f"📝 Files updated by simulation fix pass: {', '.join(sorted(changed_files))}",
                 "DEBUG"

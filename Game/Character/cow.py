@@ -8,7 +8,8 @@ from Game.assets import load_image
 from Game.Abilities.ability import AbilityManager
 
 class Cow:
-    def __init__(self, rect, username, starting_position, base_health: int = 100, base_stamina: int = 100, camera_display_size: int = (0,0), world_display_size: int = (0,0), color=YELLOW, renderer=None, move_step: int = 1, ammo_find_probability: float = 0.2, starting_ammo: int = 0, eating_slowdown_pct: float = 0.4):
+    def __init__(self, rect, username, starting_position, base_health:
+        int = 100, base_stamina: int = 100, camera_display_size: int = (0,0), world_display_size: int = (0,0), color=YELLOW, renderer=None, move_step: int = 1, ammo_find_probability: float = 0.2, starting_ammo: int = 0, eating_slowdown_pct: float = 0.4):
 
         # Visual
         self.rect = pygame.Rect(rect)
@@ -36,13 +37,13 @@ class Cow:
         self.burst_fire_end_time = 0
         self.burst_count = 0
         self.burst_offset_angle = 0.0
-        # Inventory
+
         self.ammo = int(starting_ammo)
-        self.ammo_find_probability = float(ammo_find_probability)        # Movement
+        self.ammo_find_probability = float(ammo_find_probability)
+        # Movement
         self.position = Vector2(starting_position)
-        self.rotation = 0 
-        self.layer_height = 0 # this would be the height from the ground, for example walking is 0 while flying is 1
-        self.move_step = move_step
+        self.rotation = 0
+        self.layer_height = 0 # this would be the height from the ground, for example walking is 0 while flying is 1        self.move_step = move_step
         self.base_move_step = move_step
         self.eating_slowdown_pct = float(eating_slowdown_pct)
         self._is_eating = False
@@ -280,13 +281,15 @@ class Cow:
         # No projectile logic yet; modular hook here
         return True
 
-    def set_eating_intent(self, active: bool):
+    def set_eating_intent(self, active:
+        bool):
         if self.is_dead():
             self._is_eating = False
         else:
             self._is_eating = bool(active)
 
-    def set_aim_direction(self, direction: Vector2):
+    def set_aim_direction(self, direction:
+        Vector2):
         if self.is_dead():
             return
         try:
@@ -347,11 +350,13 @@ class Cow:
         return False
 
     # ----- Health API -----
-    def take_damage(self, amount: float):
+    def take_damage(self, amount:
+        float):
         new_hp = max(0, int(self.health - float(amount)))
         self.health = new_hp
 
-    def heal(self, amount: float):
+    def heal(self, amount:
+        float):
         new_hp = min(self.max_health, int(self.health + float(amount)))
         self.health = new_hp
 
@@ -370,7 +375,9 @@ class Cow:
             self.burst_offset_angle = 0.0
 
 
-    def use_ability(self, ability_id: str, arena=None, **kwargs) -> bool:
+    
+    def use_ability(self, ability_id:
+        str, arena=None, **kwargs) -> bool:
         """Use an ability by ID."""
         if hasattr(self, 'ability_manager'):
             return self.ability_manager.use_ability(ability_id, arena, **kwargs)

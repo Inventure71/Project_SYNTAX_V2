@@ -53,13 +53,16 @@ class Arena:
         """Add an object to the arena (alias for add_new_object)."""
         self.objects.append(game_object)
     
-    def add_grass_field(self, grass: GrassField):
+    def add_grass_field(self, grass:
+        GrassField):
         self.grass_fields.append(grass)
 
-    def add_obstacle(self, obstacle: Obstacle):
+    def add_obstacle(self, obstacle:
+        Obstacle):
         self.obstacles.append(obstacle)
 
-    def add_golden_field(self, field: GoldenField):
+    def add_golden_field(self, field:
+        GoldenField):
         self.golden_fields.append(field)
 
     def step(self):
@@ -279,8 +282,7 @@ class Arena:
                                     # Weapon pool for random drops
                                     weapons_pool = [
 
-
-
+                                        
                                     ]
                                     weapon = random.choice(weapons_pool)
                                     pickup = WeaponPickup(weapon, (gx + offset, gy))

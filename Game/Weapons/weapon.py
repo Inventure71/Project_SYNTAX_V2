@@ -2,7 +2,7 @@ from Game.assets import load_image
 
 
 class Weapon:
-    def __init__(self, name: str, ammo_per_shot: int = 1, projectile_speed: float = 16.0, floor_rect_size=(18, 8), floor_color=(210, 230, 255), floor_image_name: str | None = None, floor_image_scale: tuple | None = None, projectile_image_name: str | None = None, projectile_image_scale: tuple | None = None, damage: float = 10.0):
+    def __init__(self, name: str, ammo_per_shot: int = 1, projectile_speed: float = 16.0, floor_rect_size=(18, 8), floor_color=(210, 230, 255), floor_image_name: str | None = None, floor_image_scale: tuple | None = None, projectile_image_name: str | None = None, projectile_image_scale: tuple | None = None, damage: float = 10.0, description: str = ""):
         self.name = name
         self.ammo_per_shot = int(ammo_per_shot)
         self.projectile_speed = float(projectile_speed)
