@@ -118,6 +118,13 @@ def write_into_file(
         post = lines[end + 1:]
 
         if content and content != "":
+            # Guarantee that inserted content ends with a newline so that
+            # subsequent lines stay on their own line instead of being
+            # concatenated with the last inserted line. This prevents the
+            # "same-line" merge bug that surfaces after in-place edits.
+            if not content.endswith("\n"):
+                content += "\n"
+
             content_lines = content.splitlines(keepends=True)
             new_lines = pre + content_lines + post
         else:

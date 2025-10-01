@@ -280,7 +280,7 @@ class Arena:
                                     offset = random.randint(-20, 20)
                                     # Weapon pool for random drops
                                     weapons_pool = [
-                                        
+
                                     ]
                                     weapon = random.choice(weapons_pool)
                                     pickup = WeaponPickup(weapon, (gx + offset, gy))
