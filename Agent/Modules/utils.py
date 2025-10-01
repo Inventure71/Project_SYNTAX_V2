@@ -4,7 +4,7 @@ Utility functions for the agent system.
 import os
 import json
 import re
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Set
 
 
 def debug_print(message: str, level: str = "INFO") -> None:
@@ -151,3 +151,132 @@ def format_file_size(size_bytes: int) -> str:
         return f"{size_bytes // 1024} KB"
     else:
         return f"{size_bytes // (1024 * 1024)} MB"
+
+
+def _slugify_identifier(value: str) -> str:
+    """Turn a human readable value into a safe snake_case slug."""
+    if not value:
+        return "effect"
+    value = value.strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_{2,}", "_", value)
+    return value.strip("_") or "effect"
+
+
+def _extract_first_string(*candidates: Any) -> str:
+    """Return the first non-empty string representation from the candidates."""
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return ""
+
+
+def _infer_effect_kind(slug: str, data: Dict[str, Any]) -> Tuple[str, Set[str]]:
+    """Infer the high-level effect kind and any useful tags from slug/data."""
+    tags: Set[str] = set()
+    lowered = slug.lower()
+    kind_hint = _extract_first_string(
+        data.get("type"),
+        data.get("category"),
+        data.get("effect_type"),
+        data.get("mode"),
+        data.get("kind"),
+        data.get("behavior"),
+    ).lower()
+
+    text_blob = " ".join(
+        str(value).lower()
+        for key, value in data.items()
+        if isinstance(value, (str, int, float))
+    )
+
+    def has_keyword(*keywords: str) -> bool:
+        return any(keyword in lowered or keyword in kind_hint or keyword in text_blob for keyword in keywords)
+
+    if has_keyword("split"):
+        tags.add("splitting")
+    if has_keyword("homing", "seeking"):
+        tags.add("homing")
+    if has_keyword("bounce", "ricochet"):
+        tags.add("bouncing")
+    if has_keyword("freeze", "slow", "chill"):
+        tags.add("freeze")
+
+    if has_keyword("projectile", "pattern", "orbit", "arc", "radius", "spread"):
+        return "projectile_behavior", tags
+
+    if has_keyword("status", "debuff", "on_hit", "target", "enemy", "apply"):
+        return "impact", tags
+
+    # Fallback: assume status effects default to impact
+    return "impact", tags
+
+
+def normalize_effects(effects: List[Any]) -> List[Dict[str, Any]]:
+    """Normalize effect descriptors to a consistent data structure."""
+    normalized: List[Dict[str, Any]] = []
+
+    for effect in effects:
+        if isinstance(effect, str):
+            raw = effect.strip()
+            if raw.startswith("impact_"):
+                slug = raw[len("impact_"):]
+                kind = "impact"
+            elif raw.startswith("projectile_behavior_"):
+                slug = raw[len("projectile_behavior_"):]
+                kind = "projectile_behavior"
+            else:
+                slug = _slugify_identifier(raw)
+                kind = "projectile_behavior" if slug.startswith("projectile_") else "impact"
+            tags: Set[str] = set()
+            if "split" in slug:
+                tags.add("splitting")
+            if "homing" in slug:
+                tags.add("homing")
+            if "bounce" in slug:
+                tags.add("bouncing")
+            normalized.append({
+                "original": effect,
+                "kind": kind,
+                "name": slug.replace("_", " ").title(),
+                "slug": slug,
+                "string_id": f"{kind}_{slug}" if not raw.startswith(f"{kind}_") else raw,
+                "data": {},
+                "tags": sorted(tags),
+            })
+            continue
+
+        if isinstance(effect, dict):
+            name = _extract_first_string(
+                effect.get("identifier"),
+                effect.get("name"),
+                effect.get("effect"),
+                effect.get("status"),
+            )
+            slug = _slugify_identifier(name or effect.get("type", "") or "effect")
+            kind, tags = _infer_effect_kind(slug, effect)
+            string_id = f"{kind}_{slug}" if kind in {"impact", "projectile_behavior"} else slug
+            normalized.append({
+                "original": effect,
+                "kind": kind,
+                "name": name or slug.replace("_", " ").title(),
+                "slug": slug,
+                "string_id": string_id,
+                "data": effect,
+                "tags": sorted(tags),
+            })
+            continue
+
+        # Unsupported type – capture as generic impact effect
+        slug = _slugify_identifier(str(effect))
+        normalized.append({
+            "original": effect,
+            "kind": "impact",
+            "name": slug.replace("_", " ").title(),
+            "slug": slug,
+            "string_id": f"impact_{slug}",
+            "data": {"value": effect},
+            "tags": [],
+        })
+
+    return normalized

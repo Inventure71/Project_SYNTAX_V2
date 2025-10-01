@@ -6,7 +6,7 @@ import re
 import py_compile
 from typing import Dict, List, Any, Tuple
 
-from .utils import debug_print, safe_read_file, validate_method_signature
+from .utils import debug_print, safe_read_file, validate_method_signature, normalize_effects
 
 
 def check_formatting_issues(code: str, filename: str) -> List[str]:
@@ -118,8 +118,13 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
         weapon_name = weapon_plan.get("weapon_name", "UnknownWeapon")
         weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
         effects = weapon_plan.get("effects", [])
+        normalized_effects = normalize_effects(effects)
+        effect_debug_list = [effect_info["string_id"] for effect_info in normalized_effects]
 
-        debug_print(f"Validating weapon: {weapon_name} with effects: {effects}", "INFO")
+        debug_print(
+            f"Validating weapon: {weapon_name} with effects: {effect_debug_list}",
+            "INFO"
+        )
 
         # Check weapon file
         weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
@@ -133,7 +138,7 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
             debug_print(f"✅ Weapon file exists: {weapon_file}", "DEBUG")
 
         # Check projectile file if effects exist
-        if effects:
+        if normalized_effects:
             projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
             debug_print(f"Checking projectile file: {projectile_file}", "DEBUG")
 
@@ -171,7 +176,7 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
                         debug_print(f"❌ Formatting issue: {issue}", "ERROR")
 
         # Validate projectile file content if effects exist
-        if effects and os.path.exists(projectile_file):
+        if normalized_effects and os.path.exists(projectile_file):
             proj_code, success = safe_read_file(projectile_file)
             if success:
                 debug_print("Reading projectile file content for validation", "DEBUG")
@@ -206,29 +211,50 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
                     debug_print(f"❌ Projectile incorrectly uses self.kill()", "ERROR")
 
                 # Check effect implementations
-                for effect in effects:
-                    debug_print(f"Checking effect implementation: {effect}", "DEBUG")
+                for effect_info in normalized_effects:
+                    descriptor = effect_info["string_id"]
+                    kind = effect_info["kind"]
+                    slug = effect_info["slug"]
+                    tags = effect_info["tags"]
 
-                    if effect.startswith("projectile_behavior_") or effect in ["custom_fire_pattern", "homing", "bouncing", "zigzag"]:
-                        # Projectile-only behaviors - NO Cow class methods needed
-                        if "update" not in proj_code.lower():
-                            validation["errors"].append(f"Projectile missing behavior implementation for {effect}")
-                            validation["has_errors"] = True
-                            debug_print(f"❌ Missing behavior implementation for {effect}", "ERROR")
+                    debug_print(f"Checking effect implementation: {descriptor}", "DEBUG")
 
-                    elif "splitting" in effect or "split" in effect:
-                        # Check for splitting logic
-                        if "arena.spawn_projectile" not in proj_code:
-                            validation["errors"].append(f"Projectile missing spawn_projectile call for {effect}")
+                    if kind == "projectile_behavior":
+                        if "splitting" in tags or "split" in slug:
+                            if "arena.spawn_projectile" not in proj_code:
+                                validation["errors"].append(
+                                    f"Projectile missing spawn_projectile call for {descriptor}"
+                                )
+                                validation["has_errors"] = True
+                                debug_print(
+                                    f"❌ Missing spawn_projectile for {descriptor}",
+                                    "ERROR"
+                                )
+                        else:
+                            if "update" not in proj_code.lower():
+                                validation["errors"].append(
+                                    f"Projectile missing behavior implementation for {descriptor}"
+                                )
+                                validation["has_errors"] = True
+                                debug_print(
+                                    f"❌ Missing behavior implementation for {descriptor}",
+                                    "ERROR"
+                                )
+                    elif kind == "impact":
+                        if f"apply_{slug}" not in proj_code:
+                            validation["errors"].append(
+                                f"Projectile doesn't apply {descriptor} effect"
+                            )
                             validation["has_errors"] = True
-                            debug_print(f"❌ Missing spawn_projectile for splitting effect", "ERROR")
-
-                    elif "impact_" in effect:
-                        # Character effects - these DO need Cow class methods
-                        if f"apply_{effect.replace('impact_', '')}" not in proj_code:
-                            validation["errors"].append(f"Projectile doesn't apply {effect} effect")
-                            validation["has_errors"] = True
-                            debug_print(f"❌ Missing effect application for {effect}", "ERROR")
+                            debug_print(
+                                f"❌ Missing effect application for {descriptor}",
+                                "ERROR"
+                            )
+                    else:
+                        debug_print(
+                            f"ℹ️  No validation rules for effect kind '{kind}' ({descriptor})",
+                            "DEBUG"
+                        )
 
         # Check Cow class for effect support - ONLY for impact_ effects (character effects)
         cow_file = "Game/Character/cow.py"
@@ -237,26 +263,39 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
             if success:
                 debug_print("Checking Cow class for character effect support", "DEBUG")
 
-                for effect in effects:
-                    # ONLY check Cow for impact_ effects (character effects)
-                    # Projectile behaviors like "custom_fire_pattern", "zigzag", etc. are handled in projectile class
-                    if "impact_" in effect:
-                        effect_name = effect.replace("impact_", "")
-                        debug_print(f"Checking Cow class for {effect_name} character effect support", "DEBUG")
+                for effect_info in normalized_effects:
+                    if effect_info["kind"] != "impact":
+                        debug_print(
+                            f"✓ Skipping Cow check for projectile-only effect: {effect_info['string_id']}",
+                            "DEBUG"
+                        )
+                        continue
 
-                        # Check for state variable
-                        if f"self.is_{effect_name}" not in cow_code:
-                            validation["errors"].append(f"Cow missing is_{effect_name} state variable")
-                            validation["has_errors"] = True
-                            debug_print(f"❌ Cow missing state variable for {effect_name}", "ERROR")
+                    effect_name = effect_info["slug"]
+                    debug_print(
+                        f"Checking Cow class for {effect_name} character effect support",
+                        "DEBUG"
+                    )
 
-                        # Check for apply method
-                        if f"def apply_{effect_name}" not in cow_code:
-                            validation["errors"].append(f"Cow missing apply_{effect_name} method")
-                            validation["has_errors"] = True
-                            debug_print(f"❌ Cow missing apply method for {effect_name}", "ERROR")
-                    else:
-                        debug_print(f"✓ Skipping Cow check for projectile-only effect: {effect}", "DEBUG")
+                    if f"self.is_{effect_name}" not in cow_code:
+                        validation["errors"].append(
+                            f"Cow missing is_{effect_name} state variable"
+                        )
+                        validation["has_errors"] = True
+                        debug_print(
+                            f"❌ Cow missing state variable for {effect_name}",
+                            "ERROR"
+                        )
+
+                    if f"def apply_{effect_name}" not in cow_code:
+                        validation["errors"].append(
+                            f"Cow missing apply_{effect_name} method"
+                        )
+                        validation["has_errors"] = True
+                        debug_print(
+                            f"❌ Cow missing apply method for {effect_name}",
+                            "ERROR"
+                        )
 
         debug_print(f"Validation complete: {len(validation['checks_passed'])} checks passed, {len(validation['warnings'])} warnings, {len(validation['errors'])} errors", "INFO")
 

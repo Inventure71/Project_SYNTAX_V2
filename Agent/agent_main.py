@@ -12,7 +12,14 @@ from Agent.Tools.helpers_ignore import collect_directory_files_and_contents
 from Agent.Prompts.system_prompts import global_system_prompt
 
 # Import our new modules
-from Agent.Modules.utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, format_file_size
+from Agent.Modules.utils import (
+    debug_print,
+    safe_read_file,
+    safe_write_file,
+    extract_json_from_text,
+    format_file_size,
+    normalize_effects,
+)
 from Agent.Modules.validation import validate_weapon_implementation, validate_projectile_behavior, run_python_syntax_check
 from Agent.Modules.fixing import fix_weapon_issues, fix_simulation_issues
 from Agent.Modules.simulation_testing import run_game_simulation_tests
@@ -247,6 +254,8 @@ class AgentMain:
             # Stage 7: Syntax and static validation
             debug_print("\n🧪 Running syntax and static validation phase...", "INFO")
 
+            effect_infos = normalize_effects(weapon_plan.get("effects", []))
+
             relevant_files = set()
             for path_candidate in results.get("files_created", []) + results.get("files_modified", []):
                 if path_candidate:
@@ -255,6 +264,8 @@ class AgentMain:
                 relevant_files.add(weapon_file)
             if projectile_file:
                 relevant_files.add(projectile_file)
+            if any(effect_info["kind"] == "impact" for effect_info in effect_infos):
+                relevant_files.add("Game/Character/cow.py")
 
             relevant_files = sorted(relevant_files)
 
@@ -483,22 +494,35 @@ Return ONLY valid JSON, no other text."""
         debug_print("🔧 Modifying Cow class for effects", "INFO")
         
         effects = weapon_plan.get("effects", [])
-        if not effects:
-            debug_print("No effects to add to Cow class", "DEBUG")
+        normalized_effects = normalize_effects(effects)
+        impact_effects = [effect for effect in normalized_effects if effect["kind"] == "impact"]
+
+        if not impact_effects:
+            debug_print("No character effects requiring Cow updates", "DEBUG")
             return False
         
         if not self._check_request_limit():
             return False
         
+        effect_lines = []
+        for effect in impact_effects:
+            effect_lines.append(
+                f"- {effect['name']} (slug: {effect['slug']}) => {json.dumps(effect['original'], default=str)}"
+            )
+        effects_block = "\n".join(effect_lines)
+
         prompt = f"""Add support for these effects to the Cow class:
 
-EFFECTS: {effects}
+Impact Effects:
+{effects_block}
 
-Read the Cow class file and add necessary:
-1. State variables (self.is_<effect> = False)
-2. Apply methods (def apply_<effect>(self, duration))
+Requirements:
+1. Call read_file("Game/Character/cow.py", line_count=True) to inspect the existing class.
+2. Add or update state variables (self.is_<effect> = False) for each impact effect.
+3. Add or update apply_<effect>(self, duration, **kwargs) methods so projectiles can trigger them.
+4. Ensure code style matches the file and keep one statement per line.
 
-Use read_file and write_into_file tools."""
+Use read_file and write_into_file tools for every change."""
 
         try:
             self.active_client.ask_with_tools(
@@ -519,16 +543,25 @@ Use read_file and write_into_file tools."""
         
         weapon_class_name = weapon_plan.get("weapon_class_name", "CustomWeapon")
         weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
-        
+        normalized_effects = normalize_effects(weapon_plan.get("effects", []))
+        effect_lines = [
+            f"- {effect['name']} ({effect['kind']}) => {json.dumps(effect['original'], default=str)}"
+            for effect in normalized_effects
+        ]
+        effects_block = "\n".join(effect_lines) if effect_lines else "(no special effects)"
+
         prompt = f"""Create a weapon class file based on this plan:
 
 WEAPON PLAN:
 {json.dumps(weapon_plan, indent=2)}
 
+EFFECT SUMMARY:
+{effects_block}
+
 🚨 CRITICAL FORMATTING: Each statement MUST be on its own line. NO multiple statements on same line!
 
 REQUIREMENTS:
-1. Read existing weapon examples (like Game/Weapons/weapon.py)
+1. Call read_file("Game/Weapons/weapon.py", line_count=True) to study existing patterns. Read any other relevant files before editing.
 2. Create a new weapon class that inherits from Weapon
 3. Use "placeholder.png" for all images
 4. Implement custom fire patterns if needed
@@ -570,16 +603,25 @@ Use read_file to see examples, then write_over_file to create the new weapon."""
         
         weapon_class_name = weapon_plan.get("weapon_class_name", "CustomWeapon")
         projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
-        
+        normalized_effects = normalize_effects(weapon_plan.get("effects", []))
+        effect_lines = [
+            f"- {effect['name']} ({effect['kind']}) => {json.dumps(effect['original'], default=str)}"
+            for effect in normalized_effects
+        ]
+        effects_block = "\n".join(effect_lines) if effect_lines else "(no special effects)"
+
         prompt = f"""Create a projectile class file based on this plan:
 
 WEAPON PLAN:
 {json.dumps(weapon_plan, indent=2)}
 
+EFFECT SUMMARY:
+{effects_block}
+
 🚨 CRITICAL FORMATTING: Each statement MUST be on its own line. NO multiple statements on same line!
 
 REQUIREMENTS:
-1. Read existing projectile examples (like Game/Objects/projectile.py)
+1. Call read_file("Game/Objects/projectile.py", line_count=True) to study base behaviour before writing.
 2. Create projectile class inheriting from Projectile
 3. Implement on_character_hit(self, target, arena) method
 4. Implement update(self) method (no arena parameter!)
@@ -770,4 +812,3 @@ Use read_file and write_into_file to fix each issue. When a backup path is provi
         except Exception as e:
             debug_print(f"Error in comprehensive fixing: {e}", "ERROR")
             return {"all_fixed": False, "remaining_issues": issues}
-

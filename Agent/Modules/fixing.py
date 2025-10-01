@@ -6,7 +6,7 @@ import json
 import re
 from typing import Dict, List, Any
 
-from .utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text
+from .utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, normalize_effects
 
 
 def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str, Any], agent=None) -> bool:
@@ -32,6 +32,7 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
 
     weapon_name = weapon_plan.get("weapon_name", "TestWeapon")
     weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
+    normalized_effects = normalize_effects(weapon_plan.get("effects", []))
 
     # Collect all error information for context
     context_sections: List[str] = []
@@ -41,6 +42,13 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
         context_sections.append("SYNTAX ERRORS:\n" + "\n".join(syntax_errors))
     error_context = "\n\n".join(context_sections)
     debug_print(f"Error context: {error_context}", "DEBUG")
+
+    effect_summary_lines = []
+    for effect_info in normalized_effects:
+        effect_summary_lines.append(
+            f"- {effect_info['name']} ({effect_info['kind']}) => {json.dumps(effect_info['original'], default=str)}"
+        )
+    effects_summary = "\n".join(effect_summary_lines) if effect_summary_lines else "(none)"
 
     # Read relevant files for context
     weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
@@ -71,8 +79,10 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
         with open(cow_file, 'r') as f:
             cow_content = f.read()
             effect_methods = []
-            for effect in weapon_plan.get("effects", []):
-                effect_name = effect.replace("projectile_behavior_", "").replace("impact_", "")
+            for effect in normalized_effects:
+                if effect["kind"] != "impact":
+                    continue
+                effect_name = effect["slug"]
                 if f"apply_{effect_name}" in cow_content:
                     method_start = cow_content.find(f"def apply_{effect_name}")
                     if method_start != -1:
@@ -168,13 +178,16 @@ def update(self):
 ## DETECTED ISSUES
 {error_context}
 
+## EFFECT SUMMARY
+{effects_summary}
+
 ## CURRENT CODE
 {code_context}
 
 ## YOUR TASK
 
 1. Resolve any syntax failures first so every Python file compiles without errors.
-2. Read the weapon and projectile files to understand the current implementation.
+2. Call read_file(path, line_count=True) for every relevant file (weapon, projectile, cow, arena, etc.) to understand the current implementation.
 3. Identify the root cause of each remaining validation error.
 4. Fix the issues using the available tools (read_file, write_into_file, write_over_file).
 5. Focus on:
@@ -193,7 +206,8 @@ Do not move on until every issue above is resolved."""
         debug_print("📞 Calling AI to analyze and fix validation errors...", "INFO")
         response = agent.active_client.ask_with_tools(
             prompt=fix_prompt,
-            system_prompt=combined_prompt
+            system_prompt=combined_prompt,
+            max_iterations=15
         )
 
         debug_print("✅ AI completed fixing process", "INFO")
@@ -220,6 +234,7 @@ def fix_simulation_issues(weapon_plan: Dict[str, Any], simulation_results: Dict[
 
     weapon_name = weapon_plan.get("weapon_name", "TestWeapon")
     weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
+    normalized_effects = normalize_effects(weapon_plan.get("effects", []))
 
     # Read relevant files
     weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
@@ -251,8 +266,10 @@ def fix_simulation_issues(weapon_plan: Dict[str, Any], simulation_results: Dict[
             cow_content = f.read()
             # Extract effect-related methods
             effect_methods = []
-            for effect in weapon_plan.get("effects", []):
-                effect_name = effect.replace("projectile_behavior_", "").replace("impact_", "")
+            for effect in normalized_effects:
+                if effect["kind"] != "impact":
+                    continue
+                effect_name = effect["slug"]
                 if f"apply_{effect_name}" in cow_content:
                     # Find and extract the method
                     method_start = cow_content.find(f"def apply_{effect_name}")
@@ -307,6 +324,12 @@ Use these tools to fix the issues:
 
 Remember: Be precise and minimal in your fixes."""
 
+    effect_lines = [
+        f"- {effect['name']} ({effect['kind']}) => {json.dumps(effect['original'], default=str)}"
+        for effect in normalized_effects
+    ]
+    effects_summary = "\n".join(effect_lines) if effect_lines else "(no special effects)"
+
     prompt = f"""Fix the runtime issues found during game simulation testing.
 
 ## WEAPON PLAN
@@ -315,12 +338,15 @@ Remember: Be precise and minimal in your fixes."""
 ## SIMULATION ERRORS
 {error_context}
 
+## EFFECT SUMMARY
+{effects_summary}
+
 ## CURRENT CODE
 {code_context}
 
 ## YOUR TASK
 
-1. Read the weapon file and projectile file to understand current implementation
+1. Call read_file(path, line_count=True) for every file before editing it (weapon, projectile, cow, arena, etc.).
 2. Identify the root cause of each simulation error
 3. Fix the issues using the available tools
 4. Focus on:
@@ -341,7 +367,8 @@ Fix all issues to ensure the weapon works in all test scenarios."""
         debug_print("📞 Calling AI to analyze and fix simulation errors...", "INFO")
         response = agent.active_client.ask_with_tools(
             prompt=prompt,
-            system_prompt=combined_prompt
+            system_prompt=combined_prompt,
+            max_iterations=15
         )
         
         debug_print(f"✅ AI completed simulation fixing process", "INFO")
