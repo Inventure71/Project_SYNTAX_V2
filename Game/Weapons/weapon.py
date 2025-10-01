@@ -16,6 +16,7 @@ class Weapon:
         self._floor_sprite = None
         self._projectile_sprite = None
         self.damage = float(damage)
+        self.description = str(description)
 
     def can_fire(self, ammo_available: int) -> bool:
         return ammo_available >= self.ammo_per_shot
@@ -39,6 +40,5 @@ class Weapon:
         if self._projectile_sprite is None:
             self._projectile_sprite = load_image(self.projectile_image_name, self.projectile_image_scale)
         return self._projectile_sprite
-
 
 

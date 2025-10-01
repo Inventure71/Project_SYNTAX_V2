@@ -282,16 +282,15 @@ class Cow:
         return True
 
     def set_eating_intent(self, active:
+    def set_eating_intent(self, active:
         bool):
-        if self.is_dead():
             self._is_eating = False
         else:
             self._is_eating = bool(active)
 
+
     def set_aim_direction(self, direction:
         Vector2):
-        if self.is_dead():
-            return
         try:
             vec = Vector2(direction)
         except Exception:
@@ -353,14 +352,14 @@ class Cow:
     def take_damage(self, amount:
         float):
         new_hp = max(0, int(self.health - float(amount)))
-        self.health = new_hp
-
+    def take_damage(self, amount:
+        float):
     def heal(self, amount:
         float):
         new_hp = min(self.max_health, int(self.health + float(amount)))
         self.health = new_hp
-
-    def is_dead(self) -> bool:
+    def heal(self, amount:
+        float):
         """Check if the cow is dead."""
         return self.health <= 0
 
@@ -373,8 +372,6 @@ class Cow:
             self.is_burst_fire = False
             self.burst_count = 0
             self.burst_offset_angle = 0.0
-
-
     
     def use_ability(self, ability_id:
         str, arena=None, **kwargs) -> bool:

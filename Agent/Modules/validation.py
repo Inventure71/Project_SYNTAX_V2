@@ -277,6 +277,16 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
                             "DEBUG"
                         )
 
+                if "pygame.math." in proj_code:
+                    validation["errors"].append(
+                        "Projectile uses pygame.math module for math helpers; use math or Vector2 instead"
+                    )
+                    validation["has_errors"] = True
+                    debug_print(
+                        "❌ Projectile referenced pygame.math helpers (unsupported)",
+                        "ERROR"
+                    )
+
         # Check Cow class for effect support - ONLY for impact_ effects (character effects)
         cow_file = "Game/Character/cow.py"
         if os.path.exists(cow_file):

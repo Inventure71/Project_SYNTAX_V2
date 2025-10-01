@@ -7,7 +7,6 @@ from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
 from Game.Objects import Projectile
-from Game.Objects import Projectile
 from Game.Objects import WeaponPickup
 from Game.Objects import Poop
 from Game.layers import LAYER_GROUND
@@ -281,7 +280,6 @@ class Arena:
                                     offset = random.randint(-20, 20)
                                     # Weapon pool for random drops
                                     weapons_pool = [
-
                                         
                                     ]
                                     weapon = random.choice(weapons_pool)
