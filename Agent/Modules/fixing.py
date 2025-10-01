@@ -177,20 +177,20 @@ Fix all validation errors to ensure the weapon implementation is correct."""
 
     debug_print("🤖 Using AI agent to fix validation issues", "INFO")
 
-    # Use the agent's AI client to fix issues
+    # Use the agent's AI client to fix issues WITH TOOLS
     try:
         # Combine system prompt with agent's global prompt
         combined_prompt = agent._combine_system_prompts(system_prompt)
         
-        # Call AI to fix issues
+        # Call AI to fix issues - MUST use ask_with_tools so AI can actually make changes!
         debug_print("📞 Calling AI to analyze and fix validation errors...", "INFO")
-        response = agent.active_client.ask(
+        response = agent.active_client.ask_with_tools(
             prompt=fix_prompt,
             system_prompt=combined_prompt
         )
         
         debug_print(f"✅ AI completed fixing process", "INFO")
-        debug_print(f"AI response summary: {response[:200]}...", "DEBUG")
+        debug_print(f"AI response summary: {response[:200] if response else 'No text response'}...", "DEBUG")
         return True
 
     except Exception as e:
@@ -330,15 +330,15 @@ Fix all issues to ensure the weapon works in all test scenarios."""
         # Combine system prompt with agent's global prompt
         combined_prompt = agent._combine_system_prompts(system_prompt)
         
-        # Call AI to fix issues
+        # Call AI to fix issues - MUST use ask_with_tools so AI can actually make changes!
         debug_print("📞 Calling AI to analyze and fix simulation errors...", "INFO")
-        response = agent.active_client.ask(
+        response = agent.active_client.ask_with_tools(
             prompt=prompt,
             system_prompt=combined_prompt
         )
         
         debug_print(f"✅ AI completed simulation fixing process", "INFO")
-        debug_print(f"AI response summary: {response[:200]}...", "DEBUG")
+        debug_print(f"AI response summary: {response[:200] if response else 'No text response'}...", "DEBUG")
         return True
 
     except Exception as e:

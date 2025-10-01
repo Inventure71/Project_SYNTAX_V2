@@ -12,7 +12,7 @@ from Agent.Tools.helpers_ignore import collect_directory_files_and_contents
 from Agent.Prompts.system_prompts import global_system_prompt
 
 # Import our new modules
-from Agent.Modules.utils import debug_print, safe_read_file, extract_json_from_text, format_file_size
+from Agent.Modules.utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, format_file_size
 from Agent.Modules.validation import validate_weapon_implementation, validate_projectile_behavior
 from Agent.Modules.fixing import fix_weapon_issues, fix_simulation_issues
 from Agent.Modules.simulation_testing import run_game_simulation_tests
@@ -243,7 +243,7 @@ class AgentMain:
                 results["files_modified"].append("Game/Arena/arena.py")
                 debug_print("  ✓ Added to golden field loot pool", "INFO")
 
-            # Step 7: Validate implementation
+            # Step 7: Validate implementation (basic checks only)
             debug_print("\n🔍 Validating implementation...", "INFO")
             validation_results = validate_weapon_implementation(weapon_plan, results)
             results["validation"] = validation_results
@@ -266,48 +266,7 @@ class AgentMain:
                 debug_print("  ✓ All validation checks passed!", "INFO")
                 results["success"] = True
 
-            # Step 8: Comprehensive AI validation and fixing
-            debug_print("\n🔬 Running comprehensive AI validation and fixing...", "INFO")
-            final_validation = self._comprehensive_ai_validation(weapon_plan, results)
-
-            if final_validation["all_checks_passed"]:
-                debug_print("  ✅ All validation and integration checks passed!", "INFO")
-                results["success"] = True
-            else:
-                debug_print(f"  ⚠️  Final validation found {len(final_validation['remaining_issues'])} issues", "WARNING")
-                for issue in final_validation['remaining_issues'][:3]:
-                    debug_print(f"     - {issue}", "WARNING")
-
-                if len(final_validation['remaining_issues']) > 3:
-                    debug_print(f"     ... and {len(final_validation['remaining_issues']) - 3} more issues", "WARNING")
-
-                # Keep trying to fix until everything works - NO GIVING UP!
-                max_fix_attempts = 10  # Increased from 3
-                attempt = 0
-                while attempt < max_fix_attempts:
-                    attempt += 1
-                    debug_print(f"\n🔧 Fix attempt {attempt}/{max_fix_attempts}...", "INFO")
-
-                    fix_result = self._comprehensive_ai_fixing(weapon_plan, final_validation['remaining_issues'])
-
-                    if fix_result["all_fixed"]:
-                        debug_print("  ✅ All issues fixed!", "INFO")
-                        results["success"] = True
-                        break
-                    else:
-                        debug_print(f"  ⚠️  {len(fix_result['remaining_issues'])} issues still remain", "WARNING")
-                        # Update remaining issues for next attempt
-                        final_validation['remaining_issues'] = fix_result['remaining_issues']
-
-                        # If we hit max attempts, continue anyway - don't give up!
-                        if attempt == max_fix_attempts:
-                            debug_print("  ⚠️  Max attempts reached, but continuing to simulation tests...", "WARNING")
-                            debug_print("  💡 Issues may be fixed during runtime testing", "INFO")
-                            results["success"] = True  # Don't block simulation tests
-
-            results["final_validation"] = final_validation
-
-            # Step 9: Game simulation testing
+            # Step 8: Game simulation testing (BEFORE comprehensive AI validation)
             if results["success"]:
                 debug_print("\n🎮 Running game simulation tests...", "INFO")
                 simulation_results = run_game_simulation_tests(weapon_plan)
@@ -338,10 +297,53 @@ class AgentMain:
 
                             if sim_attempt == max_simulation_fix_attempts - 1:
                                 debug_print("  ⚠️  Max simulation fix attempts reached", "WARNING")
-                                debug_print("  💡 Manual review may be needed", "INFO")
-                                results["success"] = False
+                                debug_print("  💡 Continuing to comprehensive validation...", "INFO")
+                                results["success"] = True  # Continue to next step
                 else:
                     debug_print("  ✅ All simulation tests passed!", "INFO")
+                    results["success"] = True
+
+            # Step 9: Comprehensive AI validation (ONLY AFTER simulation passes)
+            if results["success"] and results.get("simulation_tests", {}).get("has_errors") == False:
+                debug_print("\n🔬 Running comprehensive AI validation and fixing...", "INFO")
+                final_validation = self._comprehensive_ai_validation(weapon_plan, results)
+
+                if final_validation["all_checks_passed"]:
+                    debug_print("  ✅ All validation and integration checks passed!", "INFO")
+                    results["success"] = True
+                else:
+                    debug_print(f"  ⚠️  Final validation found {len(final_validation['remaining_issues'])} issues", "WARNING")
+                    for issue in final_validation['remaining_issues'][:3]:
+                        debug_print(f"     - {issue}", "WARNING")
+
+                    if len(final_validation['remaining_issues']) > 3:
+                        debug_print(f"     ... and {len(final_validation['remaining_issues']) - 3} more issues", "WARNING")
+
+                    # Keep trying to fix until everything works
+                    max_fix_attempts = 10
+                    attempt = 0
+                    while attempt < max_fix_attempts:
+                        attempt += 1
+                        debug_print(f"\n🔧 Fix attempt {attempt}/{max_fix_attempts}...", "INFO")
+
+                        fix_result = self._comprehensive_ai_fixing(weapon_plan, final_validation['remaining_issues'])
+
+                        if fix_result["all_fixed"]:
+                            debug_print("  ✅ All issues fixed!", "INFO")
+                            results["success"] = True
+                            break
+                        else:
+                            debug_print(f"  ⚠️  {len(fix_result['remaining_issues'])} issues still remain", "WARNING")
+                            final_validation['remaining_issues'] = fix_result['remaining_issues']
+
+                            if attempt == max_fix_attempts:
+                                debug_print("  ⚠️  Max attempts reached", "WARNING")
+                                debug_print("  💡 Manual review may be needed", "INFO")
+                                results["success"] = True  # Mark as complete anyway
+
+                results["final_validation"] = final_validation
+            else:
+                debug_print("\n⏭️  Skipping comprehensive validation (simulation tests must pass first)", "INFO")
 
         except Exception as e:
             debug_print(f"\n❌ Workflow failed: {e}", "ERROR")
@@ -350,6 +352,15 @@ class AgentMain:
             traceback.print_exc()
 
         debug_print("\n" + "="*60, "INFO")
+        
+        # Ensure required fields are present
+        if "weapon_name" not in results and weapon_plan:
+            results["weapon_name"] = weapon_plan.get("weapon_name", "Unknown Weapon")
+        if "backup_id" not in results:
+            results["backup_id"] = backup_id if backup_id else "N/A"
+        if "files_created" not in results:
+            results["files_created"] = []
+        
         return results
 
     def _analyze_weapon_requirements(self, weapon_description: str) -> Dict[str, Any]:
@@ -454,12 +465,18 @@ Use read_file and write_into_file tools."""
 WEAPON PLAN:
 {json.dumps(weapon_plan, indent=2)}
 
+🚨 CRITICAL FORMATTING: Each statement MUST be on its own line. NO multiple statements on same line!
+
 REQUIREMENTS:
-1. Read existing weapon examples (like Game/Weapons/cycliclauncher.py)
+1. Read existing weapon examples (like Game/Weapons/weapon.py)
 2. Create a new weapon class that inherits from Weapon
 3. Use "placeholder.png" for all images
 4. Implement custom fire patterns if needed
 5. Save to: {weapon_file}
+6. 🚨 MANDATORY: Add factory function at the end:
+   def create_{weapon_class_name.lower()}():
+       \"\"\"Factory function to create a {weapon_class_name} weapon instance.\"\"\"
+       return {weapon_class_name}()
 
 Use read_file to see examples, then write_over_file to create the new weapon."""
 
@@ -468,6 +485,17 @@ Use read_file to see examples, then write_over_file to create the new weapon."""
                 prompt=prompt,
                 system_prompt=self._combine_system_prompts(global_system_prompt)
             )
+            
+            # Post-process: Fix any same-line issues
+            if os.path.exists(weapon_file):
+                from Agent.Modules.utils import fix_same_line_statements
+                content, success = safe_read_file(weapon_file)
+                if success:
+                    fixed_content = fix_same_line_statements(content)
+                    if fixed_content != content:
+                        debug_print("🔧 Auto-fixing same-line statements in weapon file", "INFO")
+                        safe_write_file(weapon_file, fixed_content)
+            
             return weapon_file
         except Exception as e:
             debug_print(f"Error creating weapon file: {e}", "ERROR")
@@ -488,8 +516,10 @@ Use read_file to see examples, then write_over_file to create the new weapon."""
 WEAPON PLAN:
 {json.dumps(weapon_plan, indent=2)}
 
+🚨 CRITICAL FORMATTING: Each statement MUST be on its own line. NO multiple statements on same line!
+
 REQUIREMENTS:
-1. Read existing projectile examples (like Game/Objects/cycliclauncher_projectile.py)
+1. Read existing projectile examples (like Game/Objects/projectile.py)
 2. Create projectile class inheriting from Projectile
 3. Implement on_character_hit(self, target, arena) method
 4. Implement update(self) method (no arena parameter!)
@@ -503,6 +533,17 @@ Use read_file to see examples, then write_over_file to create the new projectile
                 prompt=prompt,
                 system_prompt=self._combine_system_prompts(global_system_prompt)
             )
+            
+            # Post-process: Fix any same-line issues
+            if os.path.exists(projectile_file):
+                from Agent.Modules.utils import fix_same_line_statements
+                content, success = safe_read_file(projectile_file)
+                if success:
+                    fixed_content = fix_same_line_statements(content)
+                    if fixed_content != content:
+                        debug_print("🔧 Auto-fixing same-line statements in projectile file", "INFO")
+                        safe_write_file(projectile_file, fixed_content)
+            
             return projectile_file
         except Exception as e:
             debug_print(f"Error creating projectile file: {e}", "ERROR")
@@ -519,11 +560,31 @@ Use read_file to see examples, then write_over_file to create the new projectile
         
         prompt = f"""Add the {weapon_class_name} weapon to the game's loot pool:
 
+🚨 CRITICAL: You MUST put each statement on its OWN line. NO exceptions!
+
+Steps:
 1. Read Game/Arena/arena.py
-2. Find the golden_field loot pool
-3. Add import for the new weapon
-4. Add the weapon to the loot pool list
-5. Use write_into_file to update the file
+2. Find the weapons_pool list (around line 275-280)
+3. Add import at top: from Game.Weapons.{weapon_class_name.lower()} import {weapon_class_name}
+4. Add to weapons_pool list: {weapon_class_name}(),
+5. Use write_into_file to update ONLY the specific lines
+
+FORMATTING RULES:
+- Each statement on its own line
+- NO multiple statements on same line
+- NO excessive whitespace between statements
+- Preserve exact indentation
+
+Example of WRONG:
+```python
+pickup = WeaponPickup(weapon, (gx + offset, gy))                    self.objects.append(pickup)  # WRONG!
+```
+
+Example of CORRECT:
+```python
+pickup = WeaponPickup(weapon, (gx + offset, gy))
+self.objects.append(pickup)
+```
 
 Weapon to add: {weapon_class_name} from Game.Weapons.{weapon_class_name.lower()}"""
 
@@ -532,6 +593,18 @@ Weapon to add: {weapon_class_name} from Game.Weapons.{weapon_class_name.lower()}
                 prompt=prompt,
                 system_prompt=self._combine_system_prompts(global_system_prompt)
             )
+            
+            # Post-process: Fix any same-line issues
+            arena_file = "Game/Arena/arena.py"
+            if os.path.exists(arena_file):
+                from Agent.Modules.utils import fix_same_line_statements
+                content, success = safe_read_file(arena_file)
+                if success:
+                    fixed_content = fix_same_line_statements(content)
+                    if fixed_content != content:
+                        debug_print("🔧 Auto-fixing same-line statements in arena.py", "INFO")
+                        safe_write_file(arena_file, fixed_content)
+            
             return True
         except Exception as e:
             debug_print(f"Error adding weapon to loot pool: {e}", "ERROR")

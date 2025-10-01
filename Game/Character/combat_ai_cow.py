@@ -31,7 +31,7 @@ class CombatAICow(Cow):
         self._ammo_seek_threshold = 3  # Seek ammo when below this
     
     def update(self, arena=None):
-        super().update(arena)
+        super().update()
         
         if self.is_dead():
             return

@@ -31,19 +31,14 @@ class Cow:
         self.max_health = int(base_health)
         self.health = int(base_health)
         self.stamina = base_stamina
-        # Effect tracking
+        # Effect tracking (kept clean - no test weapon effects)
         self.is_burst_fire = False
         self.burst_fire_end_time = 0
         self.burst_count = 0
         self.burst_offset_angle = 0.0
-        self.burst_cooldown_ms = 0
-        self._burst_shots_remaining = 0
-        self._burst_ready_time = 0
-
-        # Inventory        self.ammo = int(starting_ammo)
-        self.ammo_find_probability = float(ammo_find_probability)
-        
-        # Movement
+        # Inventory
+        self.ammo = int(starting_ammo)
+        self.ammo_find_probability = float(ammo_find_probability)        # Movement
         self.position = Vector2(starting_position)
         self.rotation = 0 
         self.layer_height = 0 # this would be the height from the ground, for example walking is 0 while flying is 1
@@ -360,46 +355,19 @@ class Cow:
         new_hp = min(self.max_health, int(self.health + float(amount)))
         self.health = new_hp
 
-    def set_health(self, value: float):
-        self.health = max(0, min(self.max_health, int(value)))
-
     def is_dead(self) -> bool:
+        """Check if the cow is dead."""
         return self.health <= 0
-    
-    # ----- Ability API -----
-    def add_ability(self, ability_id: str, ability):
-        """Add an ability to this character."""
-        if hasattr(self, 'ability_manager'):
-            self.ability_manager.add_ability(ability_id, ability)
-    
-    # ----- Effect Methods -----
-
-    def apply_burst_fire(self, duration_ms, burst_count: int = 4, offset_angle: float = 90.0, cooldown_ms: int = 200):
-        """Apply a burst fire pattern to character attacks."""
-        if self.is_dead():
-            return
-        now = pygame.time.get_ticks()
-        self.is_burst_fire = True
-        self.burst_fire_end_time = now + duration_ms
-        self.burst_count = max(1, burst_count)
-        self.burst_offset_angle = float(offset_angle)
-        self.burst_cooldown_ms = max(0, cooldown_ms)
-        # Reset current burst state when a new effect is applied
-        self._burst_shots_remaining = 0
-        self._burst_ready_time = 0
 
     def _update_effects(self):
         """Update and expire all effects."""
         now = pygame.time.get_ticks()
 
-        # Expire burst_fire
+        # Expire burst_fire (production-ready effect)
         if self.is_burst_fire and now >= self.burst_fire_end_time:
             self.is_burst_fire = False
             self.burst_count = 0
             self.burst_offset_angle = 0.0
-            self.burst_cooldown_ms = 0
-            self._burst_shots_remaining = 0
-            self._burst_ready_time = 0
 
 
     def use_ability(self, ability_id: str, arena=None, **kwargs) -> bool:

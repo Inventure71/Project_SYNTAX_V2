@@ -8,6 +8,62 @@ from typing import Dict, List, Any, Tuple
 from .utils import debug_print, safe_read_file, validate_method_signature
 
 
+def check_formatting_issues(code: str, filename: str) -> List[str]:
+    """
+    Check for common formatting issues like multiple statements on the same line.
+    """
+    issues = []
+    lines = code.split('\n')
+    
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        
+        # Check for excessive whitespace followed by code (indicatessame-line statements)
+        if '        ' in line and not line.strip().startswith('#'):
+            # Find positions of excessive whitespace
+            parts = re.split(r'( {8,})', line)
+            if len(parts) > 2:
+                # More than one code segment with large gaps
+                first_code = parts[0].strip()
+                remaining = ''.join(parts[2:]).strip()
+                
+                if first_code and remaining and not remaining.startswith('#'):
+                    issues.append(f"{filename}:{line_num} - Multiple statements on same line (excessive whitespace detected)")
+        
+        # Check for specific patterns that indicate same-line statements
+        suspicious_patterns = [
+            (r'\)[ ]{5,}\w+', 'Code after closing bracket with excessive spaces'),
+            (r'\][ ]{5,}\w+', 'Code after closing bracket with excessive spaces'),
+            (r'[a-zA-Z0-9_][ ]{10,}[a-zA-Z0-9_]', 'Code with excessive spacing between identifiers'),
+        ]
+        
+        for pattern, description in suspicious_patterns:
+            if re.search(pattern, line):
+                issues.append(f"{filename}:{line_num} - {description}")
+    
+    return issues
+
+
+def check_factory_function(weapon_file: str, weapon_class_name: str) -> Tuple[bool, str]:
+    """
+    Check if the weapon file has the required factory function.
+    Returns (has_factory, error_message)
+    """
+    content, success = safe_read_file(weapon_file)
+    if not success:
+        return False, f"Could not read weapon file: {weapon_file}"
+    
+    factory_func_name = f"create_{weapon_class_name.lower()}"
+    factory_pattern = rf"^def {factory_func_name}\(\):"
+    
+    if not re.search(factory_pattern, content, re.MULTILINE):
+        return False, f"Missing factory function: {factory_func_name}()"
+    
+    return True, ""
+
+
 def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validate weapon implementation for common issues.
@@ -68,6 +124,14 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
                     validation["errors"].append("Weapon should use 'placeholder.png' for floor_image_name and projectile_image_name")
                     validation["has_errors"] = True
                     debug_print(f"❌ Weapon not using placeholder.png", "ERROR")
+                
+                # Check for multiple statements on same line
+                formatting_issues = check_formatting_issues(weapon_code, weapon_file)
+                if formatting_issues:
+                    for issue in formatting_issues:
+                        validation["errors"].append(issue)
+                        validation["has_errors"] = True
+                        debug_print(f"❌ Formatting issue: {issue}", "ERROR")
 
         # Validate projectile file content if effects exist
         if effects and os.path.exists(projectile_file):

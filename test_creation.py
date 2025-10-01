@@ -76,12 +76,12 @@ def create_weapon():
     print("RESULTS")
     print("="*60)
     
-    if result["success"]:
+    if result.get("success"):
         print("✅ Weapon created successfully!")
-        print(f"\nWeapon Name: {result['weapon_name']}")
-        print(f"Backup ID: {result['backup_id']}")
+        print(f"\nWeapon Name: {result.get('weapon_name', 'N/A')}")
+        print(f"Backup ID: {result.get('backup_id', 'N/A')}")
         
-        if result["files_created"]:
+        if result.get("files_created"):
             print(f"\nFiles created:")
             for file_path in result["files_created"]:
                 print(f"  - {file_path}")

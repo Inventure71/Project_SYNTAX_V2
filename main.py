@@ -80,8 +80,6 @@ def create_game(camera_size, world_size, screen, world_surf, num_ai_players=5):
     )
     
     # Add dash ability to player
-    from Game.Abilities.dash import DashAbility
-    player.add_ability("dash", DashAbility(dash_distance=150, cooldown_ms=3000, energy_cost=10))
     
     arena.add_new_character(player)
     

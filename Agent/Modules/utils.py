@@ -39,6 +39,40 @@ def safe_write_file(file_path: str, content: str) -> bool:
         return False
 
 
+def fix_same_line_statements(code: str) -> str:
+    """
+    Automatically fix multiple statements on the same line by detecting
+    excessive whitespace and splitting into separate lines.
+    """
+    import re
+    
+    lines = code.split('\n')
+    fixed_lines = []
+    
+    for line in lines:
+        # Check for excessive whitespace (20+ spaces) between code segments
+        if re.search(r'[^\s][ ]{20,}[^\s]', line):
+            # Split by large whitespace blocks
+            parts = re.split(r'([ ]{20,})', line)
+            
+            # Get the base indentation from the first part
+            base_indent = len(line) - len(line.lstrip())
+            base_indent_str = ' ' * base_indent
+            
+            # Add first part
+            if parts[0].strip():
+                fixed_lines.append(parts[0].rstrip())
+            
+            # Add remaining parts on separate lines with same indentation
+            for i in range(2, len(parts), 2):
+                if parts[i].strip():
+                    fixed_lines.append(base_indent_str + parts[i].strip())
+        else:
+            fixed_lines.append(line)
+    
+    return '\n'.join(fixed_lines)
+
+
 def extract_json_from_text(text: str) -> Dict[str, Any]:
     """Extract JSON from text that may contain markdown formatting."""
     try:

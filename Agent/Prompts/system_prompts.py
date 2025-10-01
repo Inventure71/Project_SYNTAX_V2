@@ -41,28 +41,49 @@ You are an AI coding agent with access to file manipulation tools. You MUST use 
 4. ✅ Be systematic: One file at a time, thoroughly
 5. ✅ Keep trying until all issues are resolved
 
-## FORMATTING REQUIREMENTS
+## FORMATTING REQUIREMENTS - ABSOLUTELY CRITICAL
 
-**CRITICAL**: When writing code, ALWAYS ensure proper formatting:
-- ✅ Each statement on its OWN LINE
+**🚨 MANDATORY**: When writing code, you MUST follow these rules:
+
+### ONE STATEMENT PER LINE - NO EXCEPTIONS
+- ✅ Each statement MUST be on its OWN LINE
+- ❌ NEVER put multiple statements on the same line
+- ❌ NEVER put code after closing brackets on the same line
+- ❌ NEVER continue code after a comment on the same line
 - ✅ Proper indentation (4 spaces per level)
 - ✅ Blank lines between methods
-- ✅ NO multiple statements on same line (e.g., `foo()        bar()` is WRONG)
 
-**Example of CORRECT formatting:**
+### WRONG - Multiple Statements on Same Line
 ```python
-for obj in self.objects:
-    obj.draw(screen)
-for proj in self.projectiles:
-    proj.draw(screen)
+self.objects.append(pickup)                                break  # WRONG!
+self.value = 10.0        # Comment        self.other = 5  # WRONG!
+self.flag = True            self.count = 0  # WRONG!
+]                                    weapon = random.choice(pool)  # WRONG!
 ```
 
-**Example of WRONG formatting:**
+### CORRECT - One Statement Per Line
 ```python
-for obj in self.objects:
-    obj.draw(screen)        for proj in self.projectiles:  # WRONG!
-    proj.draw(screen)
+self.objects.append(pickup)
+break
+
+self.value = 10.0
+
+# Comment
+self.other = 5
+
+self.flag = True
+self.count = 0
+
+]
+weapon = random.choice(pool)
 ```
+
+### VALIDATION CHECK
+Before outputting ANY code, verify:
+1. No line contains more than one statement
+2. No line has code after excessive whitespace
+3. Each statement starts at proper indentation
+4. Closing brackets are alone on their line (except for simple one-liners like `])`)
 
 Your job is to FIX, not to DESCRIBE fixes. Use your tools!
 """
@@ -178,6 +199,21 @@ def update(self):
 2. **Wrong**: `self.kill()` → **Right**: `self.alive = False`
 3. **Wrong**: `def update(self, arena):` → **Right**: `def update(self):`
 4. **Wrong**: Using non-placeholder images → **Right**: Use "placeholder.png" for all weapons
+
+## 🚨 CRITICAL FORMATTING RULE
+
+**NEVER WRITE MULTIPLE STATEMENTS ON THE SAME LINE!**
+
+Examples of WRONG formatting:
+- `self.objects.append(pickup)                                break` ❌
+- `self.value = 10.0        self.other = 5` ❌  
+- `]                                    weapon = random.choice(pool)` ❌
+
+ALWAYS write one statement per line:
+```python
+self.objects.append(pickup)
+break
+```
 """
 
 system_prompt_comprehensive_validation = """
@@ -289,6 +325,26 @@ Your mission is to fix ALL validation and integration issues in generated weapon
 3. **Images**: Any hardcoded image names → "placeholder.png"
 4. **State Variables**: Missing `self.is_{effect}` in Cow class
 5. **Apply Methods**: Missing `def apply_{effect}(self, duration)` in Cow class
+6. **Formatting**: NEVER write multiple statements on the same line
+
+## 🚨 CRITICAL FORMATTING RULE
+
+**ONE STATEMENT PER LINE - NO EXCEPTIONS!**
+
+WRONG formatting (fix these immediately):
+```python
+self.append(x)                    break  # ❌
+self.value = 10        self.other = 5  # ❌
+```
+
+CORRECT formatting:
+```python
+self.append(x)
+break
+
+self.value = 10
+self.other = 5
+```
 
 Fix issues systematically and verify each fix before moving to the next.
 """

@@ -48,9 +48,10 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
         # Import the custom weapon if it exists
         debug_print(f"Attempting to import weapon: {weapon_class_name}", "DEBUG")
         try:
-            weapon_file = f"Game/Weapons/{weapon_class_name.lower()}"
-            exec(f"from {weapon_file.replace('/', '.')} import create_{weapon_class_name.lower()}")
-            create_weapon_func = locals()[f"create_{weapon_class_name.lower()}"]
+            import importlib
+            weapon_module_path = f"Game.Weapons.{weapon_class_name.lower()}"
+            weapon_module = importlib.import_module(weapon_module_path)
+            create_weapon_func = getattr(weapon_module, f"create_{weapon_class_name.lower()}")
             debug_print(f"✅ Weapon imported successfully: {weapon_class_name}", "INFO")
         except Exception as e:
             results["errors"].append(f"Failed to import weapon: {e}")
@@ -136,7 +137,7 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             with io.StringIO() as f:
                 debug_print("Creating arena with hidden display", "DEBUG")
                 arena = Arena(
-                    screen_dimensions=(800, 600),
+                    screen_dimensions=(0, 0, 800, 600),
                     world_screen_dimensions=(2000, 2000),
                     screen=test_screen,
                     world_screen=test_screen,
@@ -202,7 +203,7 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             with io.StringIO() as f:
                 debug_print("Creating arena", "DEBUG")
                 arena = Arena(
-                    screen_dimensions=(800, 600),
+                    screen_dimensions=(0, 0, 800, 600),
                     world_screen_dimensions=(2000, 2000),
                     screen=test_screen,
                     world_screen=test_screen,

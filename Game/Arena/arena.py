@@ -6,7 +6,6 @@ from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
 from Game.Objects import Projectile
-
 from Game.Objects import WeaponPickup
 from Game.Objects import Poop
 from Game.layers import LAYER_GROUND
@@ -47,6 +46,11 @@ class Arena:
 
     def add_new_object(self, game_object):
         self.objects.append(game_object)
+    
+    def add_object(self, game_object):
+        """Add an object to the arena (alias for add_new_object)."""
+        self.objects.append(game_object)
+    
     def add_grass_field(self, grass: GrassField):
         self.grass_fields.append(grass)
 
