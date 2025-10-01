@@ -563,10 +563,11 @@ EFFECT SUMMARY:
 REQUIREMENTS:
 1. Call read_file("Game/Weapons/weapon.py", line_count=True) to study existing patterns. Read any other relevant files before editing.
 2. Create a new weapon class that inherits from Weapon
-3. Use "placeholder.png" for all images
-4. Implement custom fire patterns if needed
-5. Save to: {weapon_file}
-6. 🚨 MANDATORY: Add factory function at the end:
+3. Pass weapon_plan["description"] to the base initializer via the description= parameter
+4. Use "placeholder.png" for all images
+5. Implement custom fire patterns if needed
+6. Save to: {weapon_file}
+7. 🚨 MANDATORY: Add factory function at the end:
    def create_{weapon_class_name.lower()}():
        \"\"\"Factory function to create a {weapon_class_name} weapon instance.\"\"\"
        return {weapon_class_name}()

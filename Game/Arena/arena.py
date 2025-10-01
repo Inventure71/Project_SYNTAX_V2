@@ -7,6 +7,7 @@ from Game.Objects.obstacle import Obstacle
 from Game.Objects.golden_field import GoldenField
 from Game.Weapons import Weapon
 from Game.Objects import Projectile
+from Game.Objects import Projectile
 from Game.Objects import WeaponPickup
 from Game.Objects import Poop
 from Game.layers import LAYER_GROUND
@@ -277,7 +278,9 @@ class Arena:
                                     offset = random.randint(-20, 20)
                                     # Weapon pool for random drops
                                     weapons_pool = [
-                                        Weapon(name="Bow", ammo_per_shot=1, projectile_speed=18.0, floor_image_name="bow.png", floor_image_scale=(28, 28), projectile_image_name="arrow.png", projectile_image_scale=(18, 6)),
+
+
+
                                     ]
                                     weapon = random.choice(weapons_pool)
                                     pickup = WeaponPickup(weapon, (gx + offset, gy))
@@ -346,7 +349,8 @@ class Arena:
         for obj in self.objects:
             obj.handle_event(event)
     # ------- Helpers -------
-    def _generate_world(self, num_grass: int = 10, num_obstacles: int = 14, num_golden: int = 3):
+    def _generate_world(self, num_grass:
+        int = 10, num_obstacles: int = 14, num_golden: int = 3):
         # Randomly scatter grass fields and obstacles throughout the world
         world_w, world_h = self.world_dimensions
         rng = random.Random(42)
@@ -383,7 +387,8 @@ class Arena:
             ])
             self.add_obstacle(Obstacle((x, y, w, h), base_health=health, blocking_mask=mask_choice))
 
-    def spawn_projectile(self, start_pos, direction, speed: float = 16.0, sprite=None, damage: float = 10.0, owner=None):
+    def spawn_projectile(self, start_pos, direction, speed:
+        float = 16.0, sprite=None, damage: float = 10.0, owner=None):
         """
         Spawn a projectile. Checks if owner's weapon has a custom projectile class.
         

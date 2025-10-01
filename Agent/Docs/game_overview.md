@@ -17,7 +17,7 @@ This project is a top-down arena shooter built on Pygame. The main gameplay loop
 
 - **Weapon Base (`Game/Weapons/weapon.py`)**
   - The `Weapon` class defines shared attributes (`name`, `damage`, `projectile_speed`, `fire_rate`, `ammo_per_shot`, `floor_image_name`, etc.) plus helper methods for spawning projectiles and retrieving sprites.
-  - Custom weapons must inherit from `Weapon`, set core attributes in `__init__`, optionally override `fire()` for special behaviour, and provide a factory function `create_<weapon>()` returning an instance. Use `placeholder.png` for both floor and projectile sprites.
+  - Custom weapons must inherit from `Weapon`, set core attributes in `__init__`, optionally override `fire()` for special behaviour, and provide a factory function `create_<weapon>()` returning an instance. Use `placeholder.png` for both floor and projectile sprites, and always pass a descriptive summary through the `description` parameter when calling the base initializer.
 
 - **Projectile Base (`Game/Objects/projectile.py`)**
   - Encapsulates movement and collision basics. Projectiles update their position in `update()` and signal destruction by setting `self.alive = False`.

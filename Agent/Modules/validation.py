@@ -172,7 +172,22 @@ def validate_weapon_implementation(weapon_plan: Dict[str, Any], results: Dict[st
                     validation["errors"].append("Weapon should use 'placeholder.png' for floor_image_name and projectile_image_name")
                     validation["has_errors"] = True
                     debug_print(f"❌ Weapon not using placeholder.png", "ERROR")
-                
+
+                expected_description = weapon_plan.get("description")
+                if isinstance(expected_description, str) and expected_description.strip():
+                    normalized_description = expected_description.strip()
+                    potential_patterns = {
+                        normalized_description,
+                        normalized_description.replace('"', '\\"'),
+                        normalized_description.replace("'", "\\'"),
+                    }
+                    if not any(pattern in weapon_code for pattern in potential_patterns):
+                        validation["errors"].append(
+                            "Weapon description from plan is not present in weapon implementation"
+                        )
+                        validation["has_errors"] = True
+                        debug_print("❌ Weapon description not found in implementation", "ERROR")
+
                 # Check for multiple statements on same line
                 formatting_issues = check_formatting_issues(weapon_code, weapon_file)
                 if formatting_issues:

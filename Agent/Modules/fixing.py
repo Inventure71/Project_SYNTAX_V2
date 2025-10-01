@@ -55,6 +55,19 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
     projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
     cow_file = "Game/Character/cow.py"
 
+    tracked_files = {
+        "weapon": weapon_file,
+        "projectile": projectile_file,
+        "cow": cow_file,
+    }
+
+    before_snapshots = {}
+    for path in tracked_files.values():
+        if path and os.path.exists(path):
+            content, success = safe_read_file(path)
+            if success:
+                before_snapshots[path] = content
+
     debug_print(f"Reading files for context...", "DEBUG")
     code_context = "## WEAPON FILE\n"
     try:
@@ -204,11 +217,37 @@ Do not move on until every issue above is resolved."""
     try:
         combined_prompt = agent._combine_system_prompts(system_prompt)
         debug_print("📞 Calling AI to analyze and fix validation errors...", "INFO")
+        debug_print("🛠️  Invoking ask_with_tools for validation fixes", "DEBUG")
         response = agent.active_client.ask_with_tools(
             prompt=fix_prompt,
             system_prompt=combined_prompt,
             max_iterations=15
         )
+
+        changed_files = []
+        for label, path in tracked_files.items():
+            if not path:
+                continue
+            exists_now = os.path.exists(path)
+            before_content = before_snapshots.get(path)
+            if not before_content and exists_now:
+                changed_files.append(path)
+                continue
+            if before_content and exists_now:
+                content, success = safe_read_file(path)
+                if success and content != before_content:
+                    changed_files.append(path)
+
+        if changed_files:
+            debug_print(
+                f"📝 Files updated by fix pass: {', '.join(sorted(changed_files))}",
+                "DEBUG"
+            )
+        else:
+            debug_print(
+                "⚠️  Fix pass completed but no file changes were detected.",
+                "WARNING"
+            )
 
         debug_print("✅ AI completed fixing process", "INFO")
         debug_print(f"AI response summary: {response[:200] if response else 'No text response'}...", "DEBUG")
@@ -240,6 +279,19 @@ def fix_simulation_issues(weapon_plan: Dict[str, Any], simulation_results: Dict[
     weapon_file = f"Game/Weapons/{weapon_class_name.lower()}.py"
     projectile_file = f"Game/Objects/{weapon_class_name.lower()}_projectile.py"
     cow_file = "Game/Character/cow.py"
+
+    tracked_files = {
+        "weapon": weapon_file,
+        "projectile": projectile_file,
+        "cow": cow_file,
+    }
+
+    before_snapshots = {}
+    for path in tracked_files.values():
+        if path and os.path.exists(path):
+            content, success = safe_read_file(path)
+            if success:
+                before_snapshots[path] = content
 
     debug_print(f"Reading files for simulation fix context...", "DEBUG")
     code_context = "## WEAPON FILE\n"
@@ -365,12 +417,38 @@ Fix all issues to ensure the weapon works in all test scenarios."""
         
         # Call AI to fix issues - MUST use ask_with_tools so AI can actually make changes!
         debug_print("📞 Calling AI to analyze and fix simulation errors...", "INFO")
+        debug_print("🛠️  Invoking ask_with_tools for simulation fixes", "DEBUG")
         response = agent.active_client.ask_with_tools(
             prompt=prompt,
             system_prompt=combined_prompt,
             max_iterations=15
         )
-        
+
+        changed_files = []
+        for label, path in tracked_files.items():
+            if not path:
+                continue
+            exists_now = os.path.exists(path)
+            before_content = before_snapshots.get(path)
+            if not before_content and exists_now:
+                changed_files.append(path)
+                continue
+            if before_content and exists_now:
+                content, success = safe_read_file(path)
+                if success and content != before_content:
+                    changed_files.append(path)
+
+        if changed_files:
+            debug_print(
+                f"📝 Files updated by simulation fix pass: {', '.join(sorted(changed_files))}",
+                "DEBUG"
+            )
+        else:
+            debug_print(
+                "⚠️  Simulation fix pass completed but no file changes were detected.",
+                "WARNING"
+            )
+
         debug_print(f"✅ AI completed simulation fixing process", "INFO")
         debug_print(f"AI response summary: {response[:200] if response else 'No text response'}...", "DEBUG")
         return True

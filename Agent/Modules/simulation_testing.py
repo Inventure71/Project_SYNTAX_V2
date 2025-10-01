@@ -10,6 +10,17 @@ from typing import Dict, List, Any
 from .utils import debug_print, safe_read_file
 
 
+def _validate_weapon_description(weapon_plan: Dict[str, Any], weapon) -> None:
+    expected_description = weapon_plan.get("description")
+    if isinstance(expected_description, str) and expected_description.strip():
+        actual_description = getattr(weapon, "description", "")
+        if actual_description.strip() != expected_description.strip():
+            raise Exception(
+                "Weapon description mismatch: "
+                f"expected '{expected_description.strip()}' got '{actual_description.strip()}'"
+            )
+
+
 def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
     """
     Run actual game simulation tests to ensure weapon works in real gameplay scenarios.
@@ -76,6 +87,7 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
 
             debug_print("Creating weapon instance", "DEBUG")
             weapon = create_weapon_func()
+            _validate_weapon_description(weapon_plan, weapon)
 
             debug_print("Equipping weapon on cow", "DEBUG")
             test_cow.equip_weapon(weapon)
@@ -114,6 +126,7 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             )
             debug_print("Equipping weapon on cow", "DEBUG")
             weapon = create_weapon_func()
+            _validate_weapon_description(weapon_plan, weapon)
             test_cow.equip_weapon(weapon)
 
             debug_print("Simulating ammo finding", "DEBUG")
@@ -162,6 +175,7 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
 
                 debug_print("Equipping weapon", "DEBUG")
                 weapon = create_weapon_func()
+                _validate_weapon_description(weapon_plan, weapon)
                 player.equip_weapon(weapon)
                 arena.characters.append(player)
 
@@ -236,6 +250,7 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
 
                 debug_print("Equipping weapon", "DEBUG")
                 weapon = create_weapon_func()
+                _validate_weapon_description(weapon_plan, weapon)
                 player.equip_weapon(weapon)
                 arena.characters.append(player)
                 arena.characters.append(target)
