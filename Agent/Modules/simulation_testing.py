@@ -4,6 +4,7 @@ Game simulation testing for the agent system.
 import io
 import sys
 import pygame
+from pygame import Vector2
 from typing import Dict, List, Any
 
 from .utils import debug_print, safe_read_file
@@ -78,6 +79,11 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
 
             debug_print("Equipping weapon on cow", "DEBUG")
             test_cow.equip_weapon(weapon)
+
+            debug_print("Triggering handle_event for weapon control", "DEBUG")
+            if hasattr(test_cow, 'handle_event'):
+                test_event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(500, 500))
+                test_cow.handle_event(test_event)
 
             debug_print("Validating weapon equip", "DEBUG")
             if not test_cow.has_weapon():
@@ -159,26 +165,26 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
                 player.equip_weapon(weapon)
                 arena.characters.append(player)
 
-                debug_print("Shooting into empty space", "DEBUG")
-                initial_projectile_count = len(arena.projectiles)
-                direction = (100, 0)  # Shoot right
-                speed = weapon.projectile_speed
-                sprite = weapon.get_projectile_sprite() if hasattr(weapon, 'get_projectile_sprite') else None
-                damage = weapon.damage
+                debug_print("Triggering handle_event for firing test", "DEBUG")
+                if hasattr(player, 'handle_event'):
+                    fire_event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(500, 500))
+                    player.handle_event(fire_event)
 
-                debug_print("Spawning projectile", "DEBUG")
-                arena.spawn_projectile(
-                    start_pos=(500, 500),
-                    direction=direction,
-                    speed=speed,
-                    sprite=sprite,
-                    damage=damage,
-                    owner=player
-                )
+                debug_print("Firing weapon via weapon.fire", "DEBUG")
+                initial_projectile_count = len(arena.projectiles)
+                direction = Vector2(100, 0)
+                if direction.length_squared() > 0:
+                    direction = direction.normalize()
+                projectiles = weapon.fire(player.position, direction, player)
+
+                if isinstance(projectiles, list):
+                    arena.projectiles.extend(projectiles)
+                elif projectiles:
+                    arena.projectiles.append(projectiles)
 
                 debug_print("Validating projectile spawn", "DEBUG")
                 if len(arena.projectiles) <= initial_projectile_count:
-                    raise Exception("Projectile was not spawned")
+                    raise Exception("weapon.fire did not return any projectiles")
 
                 debug_print("Running arena updates", "DEBUG")
                 for _ in range(10):
@@ -234,24 +240,24 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
                 arena.characters.append(player)
                 arena.characters.append(target)
 
+                debug_print("Triggering handle_event for combat scenario", "DEBUG")
+                if hasattr(player, 'handle_event'):
+                    attack_event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(550, 500))
+                    player.handle_event(attack_event)
+
                 debug_print("Recording initial target health", "DEBUG")
                 initial_health = target.health
 
                 debug_print("Shooting at target", "DEBUG")
-                direction = (50, 0)  # Shoot right toward target
-                speed = weapon.projectile_speed
-                sprite = weapon.get_projectile_sprite() if hasattr(weapon, 'get_projectile_sprite') else None
-                damage = weapon.damage
+                direction = Vector2(50, 0)
+                if direction.length_squared() > 0:
+                    direction = direction.normalize()
+                projectiles = weapon.fire(player.position, direction, player)
 
-                debug_print("Spawning projectile toward target", "DEBUG")
-                arena.spawn_projectile(
-                    start_pos=(500, 500),
-                    direction=direction,
-                    speed=speed,
-                    sprite=sprite,
-                    damage=damage,
-                    owner=player
-                )
+                if isinstance(projectiles, list):
+                    arena.projectiles.extend(projectiles)
+                elif projectiles:
+                    arena.projectiles.append(projectiles)
 
                 debug_print("Running arena updates to detect hit", "DEBUG")
                 for _ in range(30):

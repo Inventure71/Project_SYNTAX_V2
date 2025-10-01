@@ -35,5 +35,6 @@ This project is a top-down arena shooter built on Pygame. The main gameplay loop
 - **Arena Integration**: Every new weapon must (a) register an import at the top of `Game/Arena/arena.py` and (b) append an instance to the `weapons_pool` list so it can drop in the golden field.
 - **Projectile Lifecycle**: Use `arena.spawn_projectile(...)` with parameters in this exact order: `start_pos, direction, speed, sprite, damage, owner`. When a projectile should disappear, set `self.alive = False`—never call `self.kill()`.
 - **File Access Tools**: When coding via the automation agent, always read files with `read_file(path, line_count=True)` before editing, apply changes using `write_into_file`/`write_over_file`, and re-read to verify.
+- **Vector2 Patterns**: When converting polar coordinates to vectors, instantiate a `Vector2()` first (e.g., `vec = Vector2(); vec.from_polar((radius, angle))`). The class method form `Vector2.from_polar` does not operate on tuples directly.
 
 Keep this document in mind whenever you generate or modify gameplay code so that weapons, projectiles, and effects remain consistent with the existing systems.

@@ -50,6 +50,20 @@ def fix_same_line_statements(code: str) -> str:
     fixed_lines = []
     
     for line in lines:
+        # Normalize inline blocks like "if condition: do_something" to separate lines
+        if ":" in line:
+            match = re.match(r"^(\s*)(?:def|for|if|elif|else|while|try|except|class|with|finally)\b.*:\s+\S", line)
+            if match:
+                indent_str = match.group(1)
+                colon_index = line.find(":")
+                before = line[:colon_index + 1]
+                after = line[colon_index + 1:]
+                fixed_lines.append(before.rstrip())
+                trailing = after.strip()
+                if trailing:
+                    fixed_lines.append(f"{indent_str}    {trailing}")
+                continue
+
         # Check for excessive whitespace (20+ spaces) between code segments
         if re.search(r'[^\s][ ]{20,}[^\s]', line):
             # Split by large whitespace blocks

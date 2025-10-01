@@ -43,6 +43,12 @@ def check_formatting_issues(code: str, filename: str) -> List[str]:
         for pattern, description in suspicious_patterns:
             if re.search(pattern, line):
                 issues.append(f"{filename}:{line_num} - {description}")
+
+        # Detect inline statements after a control-flow colon (e.g., "if x: do_y")
+        if re.match(r"^\s*(def|for|if|elif|else|while|try|except|class|with|finally)\b.*:\s+\S", line):
+            issues.append(
+                f"{filename}:{line_num} - Inline code after colon; split into separate lines"
+            )
     
     return issues
 

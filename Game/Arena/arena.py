@@ -1,4 +1,5 @@
 import pygame
+from pygame import Vector2
 import random
 from Game.constants import GREEN, WHITE, FONT, BORDER
 from Game.Objects.grass import GrassField
@@ -317,29 +318,28 @@ class Arena:
                         aim_dir = (world_x - player.position.x, world_y - player.position.y)
                         if hasattr(player, 'set_aim_direction'):
                             player.set_aim_direction(aim_dir)
-                        start = (int(player.position.x), int(player.position.y))
-                        direction = (world_x - start[0], world_y - start[1])
-                        speed = getattr(weapon, 'projectile_speed', 16.0)
-                        sprite = None
-                        if hasattr(weapon, 'get_projectile_sprite'):
-                            sprite = weapon.get_projectile_sprite()
-                        damage = getattr(weapon, 'damage', 10.0)
-                        self.spawn_projectile(start, direction, speed, sprite, damage, player)
-                        # consume ammo
-                        player.ammo = weapon.consume_ammo(player.ammo)
-        elif event.type == pygame.MOUSEMOTION:
-            # Update aim direction continuously
-            if len(self.characters) > 0:
-                player = self.characters[0]
-                cam_rect = self.characters[0].create_camera_surface()
-                scale_x = self.rect.width / cam_rect.width
-                scale_y = self.rect.height / cam_rect.height
-                sx, sy = event.pos
-                world_x = cam_rect.left + (sx / scale_x)
-                world_y = cam_rect.top + (sy / scale_y)
-                aim_dir = (world_x - player.position.x, world_y - player.position.y)
-                if hasattr(player, 'set_aim_direction'):
-                    player.set_aim_direction(aim_dir)
+                        start = player.position
+                        direction = Vector2(aim_dir)
+
+                        projectiles = weapon.fire(start, direction, player)
+
+                        if isinstance(projectiles, list):
+                            self.projectiles.extend(projectiles)
+                        elif projectiles:
+                            self.projectiles.append(projectiles)        
+                        elif event.type == pygame.MOUSEMOTION:
+                            # Update aim direction continuously
+                            if len(self.characters) > 0:
+                                player = self.characters[0]
+                                cam_rect = self.characters[0].create_camera_surface()
+                                scale_x = self.rect.width / cam_rect.width
+                                scale_y = self.rect.height / cam_rect.height
+                                sx, sy = event.pos
+                                world_x = cam_rect.left + (sx / scale_x)
+                                world_y = cam_rect.top + (sy / scale_y)
+                                aim_dir = (world_x - player.position.x, world_y - player.position.y)
+                                if hasattr(player, 'set_aim_direction'):
+                                    player.set_aim_direction(aim_dir)
         # Forward event to children
         for character in self.characters:
             character.handle_event(event)
