@@ -4,9 +4,68 @@ Fixing logic for the agent system.
 import os
 import json
 import re
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
-from .utils import debug_print, safe_read_file, safe_write_file, extract_json_from_text, normalize_effects, fix_same_line_statements
+from .utils import (
+    debug_print,
+    safe_read_file,
+    safe_write_file,
+    extract_json_from_text,
+    normalize_effects,
+    fix_same_line_statements,
+)
+
+
+AUTO_FORMATTING_KEYWORDS = {
+    "Inline code after colon",
+    "Multiple statements on same line",
+    "Code after closing bracket with excessive spaces",
+    "Code with excessive spacing between identifiers",
+}
+
+
+def _auto_fix_formatting_errors(error_messages: List[str]) -> Tuple[List[str], List[str]]:
+    """Apply automatic formatting fixes for known issues.
+
+    Returns a tuple of (remaining_errors, auto_fixed_files).
+    """
+
+    path_pattern = re.compile(r"^(?P<path>[^:]+\.py):\d+ - (?P<message>.+)$")
+    remaining_errors: List[str] = []
+    auto_fixed_files: List[str] = []
+
+    for error in error_messages:
+        match = path_pattern.match(error.strip())
+        if not match:
+            remaining_errors.append(error)
+            continue
+
+        message = match.group("message")
+        if not any(keyword in message for keyword in AUTO_FORMATTING_KEYWORDS):
+            remaining_errors.append(error)
+            continue
+
+        path = match.group("path")
+        if not os.path.exists(path):
+            remaining_errors.append(error)
+            continue
+
+        content, success = safe_read_file(path)
+        if not success:
+            remaining_errors.append(error)
+            continue
+
+        fixed_content = fix_same_line_statements(content)
+        if fixed_content == content:
+            remaining_errors.append(error)
+            continue
+
+        if safe_write_file(path, fixed_content):
+            auto_fixed_files.append(path)
+        else:
+            remaining_errors.append(error)
+
+    return remaining_errors, auto_fixed_files
 
 
 def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str, Any], agent=None) -> bool:
@@ -16,6 +75,25 @@ def fix_weapon_issues(weapon_plan: Dict[str, Any], validation_results: Dict[str,
     validation_errors = list(validation_results.get("errors", []))
     syntax_errors = list(validation_results.get("syntax_errors", []))
     combined_errors = validation_errors + syntax_errors
+
+    combined_errors, auto_fixed_files = _auto_fix_formatting_errors(combined_errors)
+
+    if auto_fixed_files:
+        debug_print(
+            "🛠️  Applied automatic formatting fixes to: "
+            + ", ".join(sorted(set(auto_fixed_files))),
+            "INFO",
+        )
+        # Remove auto-fixed error messages from validation/syntax lists
+        validation_errors = [err for err in validation_errors if err in combined_errors]
+        syntax_errors = [err for err in syntax_errors if err in combined_errors]
+
+    if not combined_errors:
+        debug_print(
+            "✅ Formatting issues resolved automatically; rerunning validation on next pass.",
+            "INFO",
+        )
+        return True
 
     debug_print(
         f"Found {len(combined_errors)} issues to fix (validation: {len(validation_errors)}, syntax: {len(syntax_errors)})",
