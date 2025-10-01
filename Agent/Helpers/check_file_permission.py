@@ -1,16 +1,23 @@
-import os
-import json
+"""Utility helpers to enforce file access permissions for agent tools."""
 
+from __future__ import annotations
+
+import json
+import os
 
 # Default: enable whitelist mode so tools may only access files under specific roots
 WHITELIST_MODE = True
-WHITELIST_DIRS = ["Game", "Backup"]  # relative to workspace root (cwd at tool runtime)
+WHITELIST_DIRS = [
+    "Game",
+    "Backup",
+    "TestWorkspace",  # Dedicated sandbox for runtime test assets
+]  # relative to workspace root (cwd at tool runtime)
 
 
-def _load_blocklist():
+def _load_blocklist() -> dict:
     try:
-        with open("Agent/Prompts/blocked_files.json", "r") as f:
-            return json.load(f)
+        with open("Agent/Prompts/blocked_files.json", "r", encoding="utf-8") as handle:
+            return json.load(handle)
     except Exception:
         return {"files": []}
 
@@ -37,14 +44,9 @@ def _is_in_whitelist(file_path: str) -> bool:
 
 
 def check_file_permission(file_path: str) -> bool:
-    """
-    Returns True if the given path is permitted for tool operations.
+    """Return True if the given path is permitted for tool operations."""
 
-    Behavior:
-    - If WHITELIST_MODE is True: the path must be under one of WHITELIST_DIRS (relative to cwd)
-      and not match any blacklist token in blocked_files.json.
-    - If WHITELIST_MODE is False: only the blacklist is enforced.
-    """
     if WHITELIST_MODE:
         return _is_in_whitelist(file_path) and (not _is_blocked_by_blacklist(file_path))
     return not _is_blocked_by_blacklist(file_path)
+
