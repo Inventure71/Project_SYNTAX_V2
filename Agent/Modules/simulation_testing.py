@@ -3,11 +3,47 @@ Game simulation testing for the agent system.
 """
 import io
 import sys
+import traceback
 import pygame
 from pygame import Vector2
 from typing import Dict, List, Any
 
 from .utils import debug_print, safe_read_file
+
+
+def _format_exception_details(test_name: str, error: Exception, raw_trace: str | None = None) -> str:
+    """Create a rich error message with the most relevant traceback frames."""
+
+    if raw_trace is None:
+        raw_trace = traceback.format_exc()
+    formatted_lines: List[str] = [
+        f"Test '{test_name}' failed with {error.__class__.__name__}: {error}"
+    ]
+
+    if not raw_trace:
+        return "\n".join(formatted_lines)
+
+    trace_lines = [line.rstrip() for line in raw_trace.splitlines() if line.strip()]
+    relevant_chunks: List[str] = []
+    i = 0
+    while i < len(trace_lines):
+        line = trace_lines[i]
+        if line.startswith("File "):
+            snippet = [line]
+            if i + 1 < len(trace_lines):
+                snippet.append(trace_lines[i + 1])
+            # Focus on frames inside the project for clarity
+            if "Project_SYNTAX_V2" in line or "Game/" in line or "Game\\" in line:
+                relevant_chunks.append("\n".join(snippet))
+        i += 1
+
+    if not relevant_chunks:
+        # Fall back to the last few lines of the traceback
+        relevant_chunks = ["\n".join(trace_lines[-4:])]
+
+    formatted_lines.append("Relevant traceback frames:")
+    formatted_lines.extend(relevant_chunks)
+    return "\n".join(formatted_lines)
 
 
 def _validate_weapon_description(weapon_plan: Dict[str, Any], weapon) -> None:
@@ -106,9 +142,12 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             results["tests_passed"].append(test_name)
             debug_print(f"✅ {test_name} passed", "INFO")
         except Exception as e:
-            results["errors"].append(f"Test '{test_name}' failed: {e}")
+            raw_trace = traceback.format_exc()
+            detailed_error = _format_exception_details(test_name, e, raw_trace)
+            results["errors"].append(detailed_error)
             results["has_errors"] = True
             debug_print(f"❌ {test_name} failed: {e}", "ERROR")
+            debug_print(f"Traceback details for {test_name}:\n{raw_trace}", "DEBUG")
 
         # Test 2: Finding Ammo
         test_name = "finding_ammo"
@@ -140,9 +179,12 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             results["tests_passed"].append(test_name)
             debug_print(f"✅ {test_name} passed", "INFO")
         except Exception as e:
-            results["errors"].append(f"Test '{test_name}' failed: {e}")
+            raw_trace = traceback.format_exc()
+            detailed_error = _format_exception_details(test_name, e, raw_trace)
+            results["errors"].append(detailed_error)
             results["has_errors"] = True
             debug_print(f"❌ {test_name} failed: {e}", "ERROR")
+            debug_print(f"Traceback details for {test_name}:\n{raw_trace}", "DEBUG")
 
         # Test 3: Shooting Nothing
         test_name = "shooting_nothing"
@@ -207,9 +249,12 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             results["tests_passed"].append(test_name)
             debug_print(f"✅ {test_name} passed", "INFO")
         except Exception as e:
-            results["errors"].append(f"Test '{test_name}' failed: {e}")
+            raw_trace = traceback.format_exc()
+            detailed_error = _format_exception_details(test_name, e, raw_trace)
+            results["errors"].append(detailed_error)
             results["has_errors"] = True
             debug_print(f"❌ {test_name} failed: {e}", "ERROR")
+            debug_print(f"Traceback details for {test_name}:\n{raw_trace}", "DEBUG")
 
         # Test 4: Shooting Player
         test_name = "shooting_player"
@@ -288,17 +333,27 @@ def run_game_simulation_tests(weapon_plan: Dict[str, Any]) -> Dict[str, Any]:
             results["tests_passed"].append(test_name)
             debug_print(f"✅ {test_name} passed", "INFO")
         except Exception as e:
-            results["errors"].append(f"Test '{test_name}' failed: {e}")
+            raw_trace = traceback.format_exc()
+            detailed_error = _format_exception_details(test_name, e, raw_trace)
+            results["errors"].append(detailed_error)
             results["has_errors"] = True
             debug_print(f"❌ {test_name} failed: {e}", "ERROR")
+            debug_print(f"Traceback details for {test_name}:\n{raw_trace}", "DEBUG")
 
         pygame.quit()
         debug_print("✅ Pygame quit", "DEBUG")
 
     except Exception as e:
-        results["errors"].append(f"Simulation test suite failed: {e}")
+        raw_trace = traceback.format_exc()
+        detailed_error = (
+            "Simulation test suite failed with "
+            f"{e.__class__.__name__}: {e}\n"
+            f"Traceback:\n{raw_trace.strip()}"
+        )
+        results["errors"].append(detailed_error)
         results["has_errors"] = True
         debug_print(f"❌ Simulation test suite failed: {e}", "ERROR")
+        debug_print(f"Traceback details for simulation suite:\n{raw_trace}", "DEBUG")
 
     debug_print(f"Simulation tests complete: {len(results['tests_passed'])}/{len(results['tests_run'])} passed", "INFO")
     return results

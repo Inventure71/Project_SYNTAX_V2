@@ -282,8 +282,16 @@ def fix_simulation_issues(weapon_plan: Dict[str, Any], simulation_results: Dict[
         debug_print("❌ No agent provided, cannot perform AI fixes", "ERROR")
         return False
 
-    # Collect all error information
-    error_context = "\n".join(simulation_results["errors"])
+    # Collect all error information with detailed formatting for the agent
+    raw_errors = simulation_results.get("errors", [])
+    if raw_errors:
+        error_context = "\n\n".join(
+            f"{idx}. {error.strip()}" for idx, error in enumerate(raw_errors, start=1)
+        )
+    else:
+        error_context = "No runtime errors were reported, but a fix was requested."
+
+    debug_print(f"Simulation error context prepared for agent:\n{error_context}", "DEBUG")
 
     weapon_name = weapon_plan.get("weapon_name", "TestWeapon")
     weapon_class_name = weapon_plan.get("weapon_class_name", weapon_name)
